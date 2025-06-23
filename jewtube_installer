@@ -42,6 +42,9 @@ try {
             if (Test-Path $tempFile) { Remove-Item $tempFile }
         }
     }
+    else {
+        Write-Host "Winget bereits installiert" -ForegroundColor Green
+    }
 
     # 2. Python Installation
     Write-Step -step 2 -message "Überprüfe Python 3.11"
@@ -49,9 +52,7 @@ try {
         Write-Host "Python nicht gefunden, installiere..." -ForegroundColor Yellow
         
         try {
-            $install = winget install --id Python.Python.3.11 --exact --accept-source-agreements --accept-package-agreements
-            if ($install.ExitCode -ne 0) { throw "Exit Code $($install.ExitCode)" }
-            
+            winget install --id Python.Python.3.11 --exact --accept-source-agreements --accept-package-agreements
             # PATH aktualisieren
             $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
             Write-Host "✅ Python erfolgreich installiert" -ForegroundColor Green
@@ -60,6 +61,9 @@ try {
             Write-Host "❌ Fehler: $_" -ForegroundColor Red
             throw "Python Installation fehlgeschlagen"
         }
+    }
+    else {
+        Write-Host "Python bereits installiert: $(python --version 2>&1)" -ForegroundColor Green
     }
 
     # 3. Paketinstallation
@@ -83,27 +87,38 @@ try {
         catch {
             Write-Host "⚠️ Warnung: $($pkg.Name) konnte nicht verifiziert werden: $_" -ForegroundColor Yellow
         }
-        Start-Sleep -Milliseconds 800  # Lesbare Pause
     }
 
     # 4. Abschluss
     Write-Step -step 4 -message "Installation abgeschlossen"
     Write-Host "`n🎉 JEWTUBE ERFOLGREICH INSTALLIERT" -ForegroundColor Green
-    Write-Host "Verfügbare Kommandos:" -ForegroundColor Cyan
-    Write-Host "• python -m yt_dlp [URL]" -ForegroundColor White
-    Write-Host "• python -m ytmusicapi" -ForegroundColor White
     
     # Systeminformationen
-    Write-Host "`nSysteminformationen:" -ForegroundColor Gray
+    Write-Host "`nSysteminformationen:" -ForegroundColor Cyan
     Write-Host "Python: $(python --version 2>&1)" -ForegroundColor Gray
     Write-Host "yt-dlp: $(python -c 'import yt_dlp; print(yt_dlp.__version__)' 2>&1)" -ForegroundColor Gray
+    Write-Host "ytmusicapi: $(python -c 'import ytmusicapi; print(ytmusicapi.__version__)' 2>&1)" -ForegroundColor Gray
+    
+    Write-Host "`nVerfügbare Kommandos:" -ForegroundColor Cyan
+    Write-Host "• python -m yt_dlp [URL]" -ForegroundColor White
+    Write-Host "• python -m ytmusicapi" -ForegroundColor White
 }
 catch {
     Write-Host "`n❌❌❌ KRITISCHER FEHLER ❌❌❌" -ForegroundColor Red
     Write-Host "Fehlerdetails: $_" -ForegroundColor Red
+    $errorOccurred = $true
 }
-finally {
-    Write-Host "`nDas Fenster schließt sich in 15 Sekunden automatisch..."
-    Write-Host "Drücken Sie STRG+C um sofort zu beenden" -ForegroundColor DarkYellow
-    Start-Sleep -Seconds 15
+
+# Warte auf Benutzereingabe
+Write-Host "`n" # Leerzeile
+Write-Host "========================================" -ForegroundColor DarkGray
+if ($errorOccurred) {
+    Write-Host " FEHLER BEI DER INSTALLATION " -BackgroundColor Red -ForegroundColor White
 }
+else {
+    Write-Host " INSTALLATION ERFOLGREICH " -BackgroundColor Green -ForegroundColor Black
+}
+Write-Host "========================================" -ForegroundColor DarkGray
+
+Write-Host "`nDrücken Sie ENTER um das Fenster zu schließen..." -ForegroundColor Yellow
+[void][System.Console]::ReadLine()
