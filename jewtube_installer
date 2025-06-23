@@ -69,7 +69,7 @@ if (-NOT $adminCheck.IsInRole([Security.Principal.WindowsBuiltInRole]::Administr
     Write-Host "Das Skript wird sich neu starten..." -ForegroundColor Yellow
     
     $scriptUrl = "https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer"
-    $command = "Start-Process powershell -Verb RunAs -ArgumentList '-NoExit -Command \"irm $scriptUrl | iex\"'"
+    $command = "Start-Process powershell -Verb RunAs -ArgumentList '-NoExit -Command \"irm $scriptUrl | iex\"'""
     Invoke-Expression $command
     exit
 }
