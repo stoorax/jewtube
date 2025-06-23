@@ -1,116 +1,76 @@
-# jewtube_installer.ps1
+# JewTube Environment Installer
+# Stellt sicher, dass Python 3.8+, pip, yt-dlp, ytmusicapi und browser_cookie3 installiert sind
 
-Clear-Host
-Write-Host "===============================" -ForegroundColor Cyan
-Write-Host "  JEWTUBE ENVIRONMENT INSTALLER " -ForegroundColor Cyan
-Write-Host "===============================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "This script will check and install all required components:" -ForegroundColor White
-Write-Host " - Python 3.8+"
-Write-Host " - pip"
-Write-Host " - yt-dlp"
-Write-Host " - ytmusicapi"
-Write-Host " - browser_cookie3" -ForegroundColor Yellow
-Write-Host ""
-Pause
+# Prüft Administratorrechte (für Python-Installation erforderlich)
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-function Wait-User() {
-    Write-Host ""
-    Read-Host "Press [Enter] to continue..."
-}
+# Funktion zum Installieren von Python
+function Install-Python {
+    $pythonURL = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
+    $installerPath = "$env:TEMP\python_installer.exe"
 
-function Write-WarningColor($msg) { Write-Host "WARNING: $msg" -ForegroundColor Red }
-function Write-SuccessColor($msg) { Write-Host "SUCCESS: $msg" -ForegroundColor Green }
-function Write-Info($msg)    { Write-Host $msg -ForegroundColor White }
-
-# Check Winget
-Write-Info "Checking for Winget..."
-$wingetCmd = Get-Command winget
-if ($null -eq $wingetCmd) {
-    Write-WarningColor "Winget not found! Cannot auto-install Python. Install manually and re-run this script."
-    Wait-User
-    exit 1
-} else {
-    Write-SuccessColor "Winget found."
-}
-Wait-User
-
-# Check Python
-Write-Info "Checking for Python installation..."
-$pythonCmd = Get-Command python -ErrorAction SilentlyContinue
-if ($null -eq $pythonCmd) {
-    Write-WarningColor "Python not found! Installing via winget now..."
-    Wait-User
-    winget install --id Python.Python.3 --source winget --silent --accept-source-agreements --accept-package-agreements
-    Write-Info "Waiting for Python install to finish..."
-    Start-Sleep -Seconds 10
-} else {
-    Write-SuccessColor "Python found: $(python --version)"
-}
-Wait-User
-
-# Reload PATH for this session
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine")
-
-# Check pip
-Write-Info "Checking for pip..."
-$pipCmd = Get-Command pip -ErrorAction SilentlyContinue
-if ($null -eq $pipCmd) {
-    Write-Info "Ensuring pip is installed..."
-    python -m ensurepip --upgrade
-} else {
-    Write-SuccessColor "Pip found: $(pip --version)"
-}
-Wait-User
-
-# Upgrade pip
-Write-Info "Upgrading pip to latest version..."
-python -m pip install --upgrade pip
-Write-SuccessColor "Pip upgrade done."
-Wait-User
-
-# Required packages
-$packages = @("yt-dlp", "ytmusicapi", "browser_cookie3")
-Write-Info "Installing required Python packages: $($packages -join ', ') ..."
-python -m pip install --upgrade $packages
-Write-SuccessColor "Package installation complete."
-Wait-User
-
-# Final checks
-function Check-PythonModule($module) {
-    python -c "import $module" 2>$null
-    return $LASTEXITCODE -eq 0
-}
-
-$errors = 0
-foreach ($pkg in @("ytmusicapi", "browser_cookie3")) {
-    if (Check-PythonModule $pkg) {
-        Write-SuccessColor "$pkg installed successfully."
-    } else {
-        Write-WarningColor "$pkg NOT installed."
-        $errors++
+    try {
+        # Installer herunterladen
+        Invoke-WebRequest -Uri $pythonURL -OutFile $installerPath -UseBasicParsing
+        
+        # Python im Silent Mode installieren (für alle Benutzer mit Admin-Rechten)
+        $installArgs = "/quiet InstallAllUsers=1 PrependPath=1"
+        Start-Process -FilePath $installerPath -ArgumentList $installArgs -Wait
+        
+        # PATH-Variable aktualisieren
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+    }
+    finally {
+        # Installer aufräumen
+        if (Test-Path $installerPath) {
+            Remove-Item $installerPath -Force
+        }
     }
 }
-Wait-User
 
+# Funktion zum Prüfen der Python-Version
+function Test-PythonVersion {
+    try {
+        $pythonVersion = (python --version 2>&1 | Select-String -Pattern "Python (\d+\.\d+)").Matches.Groups[1].Value
+        return [version]$pythonVersion -ge [version]"3.8"
+    }
+    catch {
+        return $false
+    }
+}
+
+# Hauptinstallation
 try {
-    $ytDlpVersion = yt-dlp --version 2>&1
-    Write-SuccessColor "yt-dlp installed successfully: Version $ytDlpVersion"
-} catch {
-    Write-WarningColor "yt-dlp NOT installed."
-    $errors++
-}
-Wait-User
+    # 1. Python prüfen und installieren
+    if (-not (Test-PythonVersion)) {
+        Write-Host "Python 3.8+ wird installiert..." -ForegroundColor Yellow
+        
+        if (-not $isAdmin) {
+            Write-Host "FEHLER: Administratorrechte erforderlich!" -ForegroundColor Red
+            Write-Host "Bitte PowerShell als Administrator ausführen und Skript erneut starten" -ForegroundColor Yellow
+            exit 1
+        }
+        
+        Install-Python
+        
+        # Nach Installation erneut prüfen
+        if (-not (Test-PythonVersion)) {
+            Write-Host "Python-Installation fehlgeschlagen!" -ForegroundColor Red
+            exit 1
+        }
+    }
 
-if ($errors -eq 0) {
-    Write-Host ""
-    Write-SuccessColor "All dependencies installed successfully. Environment is ready for Jewtube."
-} else {
-    Write-Host ""
-    Write-WarningColor "Some components failed to install. Please check manually before using Jewtube."
+    # 2. Pakete mit pip installieren
+    Write-Host "Installiere erforderliche Python-Pakete..." -ForegroundColor Cyan
+    python -m pip install --upgrade pip
+    python -m pip install yt-dlp ytmusicapi browser_cookie3
+    
+    # 3. Erfolgsmeldung
+    Write-Host "`nJewTube-Environment erfolgreich installiert!" -ForegroundColor Green
+    Write-Host "Folgende Pakete sind jetzt verfügbar:" -ForegroundColor Green
+    python -m pip list | Select-String -Pattern "(yt-dlp|ytmusicapi|browser_cookie3)"
 }
-Wait-User
-
-Write-Host ""
-Write-Host "=== Installer completed ===" -ForegroundColor Cyan
-Wait-User
+catch {
+    Write-Host "`nFEHLER bei der Installation: $_" -ForegroundColor Red
+    exit 1
+}
