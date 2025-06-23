@@ -21,7 +21,7 @@ function Write-Warn($m)    { Write-Host "WARNING: $m" -ForegroundColor Red }
 
 # Determine Python executable
 if (Get-Command py -ErrorAction SilentlyContinue) {
-    $pythonExe = "py -3"
+    $pythonExe = "py"
 } else {
     $pythonExe = "python"
 }
