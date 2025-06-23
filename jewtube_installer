@@ -1,5 +1,9 @@
-# JewTube Installer (Finale Korrektur)
+# JewTube Installer mit Logfile-Erstellung
 # Ausführung mit: iwr https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer | iex
+
+# Logfile-Pfad erstellen
+$logFile = "$env:TEMP\JewTube_Install_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+Start-Transcript -Path $logFile -Append | Out-Null
 
 function Get-RealPython {
     $possiblePaths = @(
@@ -13,85 +17,113 @@ function Get-RealPython {
 }
 
 function Install-PythonWithWinget {
-    Write-Host "Installiere Python mit winget..." -ForegroundColor Cyan
-    winget install --id Python.Python.3.11 --exact --accept-source-agreements --accept-package-agreements --silent
-    
-    # Aktualisiere PATH
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + 
-                [System.Environment]::GetEnvironmentVariable("Path", "User")
-    
-    return Get-RealPython
-}
-
-function Write-Step {
-    param($step, $message)
-    Write-Host "`n=====[ SCHRITT $step ]=====" -ForegroundColor Magenta
-    Write-Host $message -ForegroundColor Cyan
+    Write-Host "[INFO] Installing Python with winget..."
+    try {
+        winget install --id Python.Python.3.11 --exact --accept-source-agreements --accept-package-agreements --silent
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + 
+                    [System.Environment]::GetEnvironmentVariable("Path", "User")
+        return Get-RealPython
+    }
+    catch {
+        Write-Host "[ERROR] Python installation failed: $_"
+        throw
+    }
 }
 
 # Admin-Check
 $adminCheck = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
 if (-NOT $adminCheck.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "[INFO] Admin rights required - restarting as admin..."
     $scriptUrl = "https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer"
-    Start-Process powershell -Verb RunAs -ArgumentList "-NoExit -Command `"irm '$scriptUrl' | iex`""
-    exit
+    
+    try {
+        Stop-Transcript | Out-Null
+        Start-Process powershell -Verb RunAs -ArgumentList "-NoExit -Command `"irm '$scriptUrl' | iex`""
+        exit
+    }
+    catch {
+        Write-Host "[ERROR] Failed to restart as admin: $_"
+        exit 1
+    }
 }
 
-### HAUPTPROGRAMM ###
+Write-Host "=== JewTube Installation ==="
+Write-Host "Logfile: $logFile`n"
+
 try {
-    # 1. Winget
-    Write-Step -step 1 -message "Überprüfe winget"
+    # 1. Winget Installation
+    Write-Host "[STEP 1/3] Checking winget"
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-Host "Installiere winget..." -ForegroundColor Yellow
+        Write-Host "[INFO] Installing winget..."
         $progressPreference = 'silentlyContinue'
-        irm https://aka.ms/getwinget -OutFile winget.msixbundle -UseBasicParsing
-        Add-AppxPackage -Path winget.msixbundle
-        Remove-Item winget.msixbundle -ErrorAction SilentlyContinue
+        try {
+            irm https://aka.ms/getwinget -OutFile winget.msixbundle -UseBasicParsing
+            Add-AppxPackage -Path winget.msixbundle
+            Remove-Item winget.msixbundle -ErrorAction SilentlyContinue
+            Write-Host "[SUCCESS] Winget installed"
+        }
+        catch {
+            Write-Host "[ERROR] Winget installation failed: $_"
+            throw
+        }
+    }
+    else {
+        Write-Host "[INFO] Winget already installed"
     }
 
-    # 2. Python
-    Write-Step -step 2 -message "Überprüfe Python 3.11"
+    # 2. Python Installation
+    Write-Host "`n[STEP 2/3] Checking Python"
     $pythonExe = Get-RealPython
     
     if (-not $pythonExe) {
-        Write-Host "Python nicht gefunden, installiere..." -ForegroundColor Yellow
+        Write-Host "[INFO] Python not found, installing..."
         $pythonExe = Install-PythonWithWinget
-        if (-not $pythonExe) { throw "Python installiert aber nicht gefunden" }
-        Write-Host "✅ Python installiert" -ForegroundColor Green
+        if (-not $pythonExe) { throw "Python installed but not found" }
+        Write-Host "[SUCCESS] Python installed at $pythonExe"
     }
     else {
         $version = & $pythonExe --version 2>&1
-        Write-Host "Python gefunden: $pythonExe" -ForegroundColor Green
-        Write-Host "Version: $version" -ForegroundColor Green
+        Write-Host "[INFO] Python found at $pythonExe"
+        Write-Host "[INFO] Python version: $version"
     }
 
-    # 3. Pakete installieren
-    Write-Step -step 3 -message "Installiere benötigte Pakete"
+    # 3. Package Installation
+    Write-Host "`n[STEP 3/3] Installing packages"
     $packages = @("yt-dlp", "ytmusicapi", "browser-cookie3")
     
     foreach ($pkg in $packages) {
-        Write-Host "`n🔄 Installiere $pkg..." -ForegroundColor Blue
-        
-        # Korrigierte Syntax ohne Anführungszeichen
-        & $pythonExe -m pip install --upgrade $pkg --disable-pip-version-check
-        
-        # Verifikation
-        $pkgName = $pkg.Replace('-', '_')
-        $testResult = & $pythonExe -c "import $pkgName; print('✅ Erfolgreich')" 2>&1
-        Write-Host $testResult -ForegroundColor Green
+        Write-Host "`n[INFO] Installing $pkg..."
+        try {
+            # Install package
+            & $pythonExe -m pip install --upgrade $pkg --disable-pip-version-check
+            
+            # Verify installation
+            $pkgName = $pkg.Replace('-', '_')
+            $testResult = & $pythonExe -c "import $pkgName; print('Success')" 2>&1
+            Write-Host "[SUCCESS] $pkg installed: $testResult"
+        }
+        catch {
+            Write-Host "[ERROR] $pkg installation failed: $_"
+        }
     }
 
-    # 4. Abschluss
-    Write-Step -step 4 -message "Installation abgeschlossen"
-    Write-Host "`n🎉 JEWTUBE ERFOLGREICH INSTALLIERT" -ForegroundColor Green
-    Write-Host "yt-dlp Version: $(& $pythonExe -c 'import yt_dlp; print(yt_dlp.__version__)' 2>&1)" -ForegroundColor Cyan
-    Write-Host "`nVerwendung: $pythonExe -m yt_dlp [URL]" -ForegroundColor Yellow
+    # Final verification
+    Write-Host "`n[FINAL VERIFICATION]"
+    $ytdlpVersion = & $pythonExe -c "import yt_dlp; print(yt_dlp.__version__)" 2>&1
+    $ytmusicVersion = & $pythonExe -c "import ytmusicapi; print(ytmusicapi.__version__)" 2>&1
+    
+    Write-Host "yt-dlp version: $ytdlpVersion"
+    Write-Host "ytmusicapi version: $ytmusicVersion"
+    Write-Host "`n[SUCCESS] Installation completed!"
+    Write-Host "Usage: $pythonExe -m yt_dlp [URL]"
 }
 catch {
-    Write-Host "`n❌ FEHLER: $_" -ForegroundColor Red
-    $errorOccurred = $true
+    Write-Host "`n[ERROR] Installation failed: $_"
+    Write-Host "Full error details in logfile"
 }
-
-# Warte auf Benutzereingabe
-Write-Host "`nDrücken Sie ENTER zum Beenden..." -ForegroundColor Yellow
-[void][System.Console]::ReadLine()
+finally {
+    Write-Host "`n=== Installation Log ==="
+    Write-Host "Logfile saved to: $logFile"
+    Write-Host "Please provide this file for support"
+    Stop-Transcript | Out-Null
+}
