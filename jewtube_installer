@@ -1,6 +1,7 @@
-# JewTube Installer (Fixed Version Check)
+# JewTube Installer (Logfile Auto-Open)
 # Ausführung mit: iwr https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer | iex
 
+# Logfile erstellen
 $logFile = "$env:TEMP\JewTube_Install_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 Start-Transcript -Path $logFile -Append | Out-Null
 
@@ -25,45 +26,49 @@ if (-NOT $adminCheck.IsInRole([Security.Principal.WindowsBuiltInRole]::Administr
 }
 
 Write-Host "=== JewTube Installation ==="
-Write-Host "Logfile: $logFile`n"
+Write-Host "Logfile wird erstellt: $logFile`n"
 
 try {
     # Python-Suche
     $pythonExe = Get-RealPython
     if (-not $pythonExe) {
-        Write-Host "[ERROR] Python not found!" -ForegroundColor Red
-        throw "Python installation missing"
+        throw "Python nicht gefunden!"
     }
+    Write-Host "Python gefunden: $pythonExe"
 
     # Paketinstallation
     $packages = @("yt-dlp", "ytmusicapi", "browser-cookie3")
     foreach ($pkg in $packages) {
-        Write-Host "[INSTALL] $pkg" -ForegroundColor Cyan
+        Write-Host "Installiere $pkg..."
         & $pythonExe -m pip install --upgrade $pkg --disable-pip-version-check
     }
 
     # Korrigierte Versionsprüfung
-    Write-Host "`n[VERSION CHECK]" -ForegroundColor Green
+    Write-Host "`n=== Versionsprüfung ==="
     
-    # yt-dlp mit neuer Methode
-    $ytdlpVersion = & $pythonExe -c "import yt_dlp; print(yt_dlp.version.__version__)" 2>&1
+    # yt-dlp mit garantierter Methode
+    $ytdlpVersion = & $pythonExe -c "from yt_dlp import __version__; print(__version__)" 2>&1
     Write-Host "yt-dlp: $ytdlpVersion"
     
-    # ytmusicapi (funktioniert)
     $ytmusicVersion = & $pythonExe -c "import ytmusicapi; print(ytmusicapi.__version__)" 2>&1
     Write-Host "ytmusicapi: $ytmusicVersion"
     
     # Funktionstest
-    Write-Host "`n[FUNCTIONAL TEST]" -ForegroundColor Green
-    & $pythonExe -c "from yt_dlp import YoutubeDL; print('YoutubeDL import successful')" 2>&1
+    Write-Host "`n=== Funktionstest ==="
+    & $pythonExe -c "from yt_dlp import YoutubeDL; print('YoutubeDL Import erfolgreich!')" 2>&1
 
-    Write-Host "`n[SUCCESS] All components installed correctly!" -ForegroundColor Green
+    Write-Host "`n=== ERFOLG ===" -ForegroundColor Green
+    Write-Host "Alle Komponenten erfolgreich installiert!"
 }
 catch {
-    Write-Host "`n[ERROR] $_" -ForegroundColor Red
+    Write-Host "`n=== FEHLER ===" -ForegroundColor Red
+    Write-Host $_
 }
 finally {
+    # Logfile anzeigen
     Write-Host "`n=== Logfile ==="
-    Write-Host $logFile
+    Write-Host "Öffne Logfile: $logFile"
+    notepad $logFile
+    
     Stop-Transcript | Out-Null
 }
