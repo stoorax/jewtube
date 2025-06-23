@@ -1,76 +1,109 @@
-# JewTube Environment Installer (Portable Version)
-# Installiert alles in einem isolierten Verzeichnis für einfache Deinstallation
+# JewTube Environment Installer (Stable Version)
+# Isolierte Installation mit verbessertem Error-Handling
 
-$INSTALL_DIR = "jewtube_env"
-$PYTHON_VERSION = "3.11.9"
-$PYTHON_URL = "https://www.python.org/ftp/python/$PYTHON_VERSION/python-$PYTHON_VERSION-embed-amd64.zip"
-$PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
+$ErrorActionPreference = "Stop"
 
-# 1. Installationsverzeichnis erstellen
-Write-Host "`nErstelle Installationsverzeichnis: $INSTALL_DIR" -ForegroundColor Cyan
+# 1. Installationsverzeichnis vorbereiten
+$INSTALL_DIR = "$PWD\jewtube_env"
+Write-Host "`n=== JewTube Environment Installer ===" -ForegroundColor Cyan
+Write-Host "Installationsziel: $INSTALL_DIR" -ForegroundColor Yellow
+
 if (Test-Path $INSTALL_DIR) {
-    Remove-Item $INSTALL_DIR -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "Entferne bestehende Installation..." -ForegroundColor Yellow
+    Remove-Item $INSTALL_DIR -Recurse -Force -ErrorAction Stop
 }
-New-Item -ItemType Directory -Path $INSTALL_DIR | Out-Null
-Set-Location $INSTALL_DIR
 
-# 2. Python herunterladen und entpacken
-Write-Host "Lade Python $PYTHON_VERSION herunter..." -ForegroundColor Cyan
-$pythonZip = "python_embedded.zip"
-Invoke-WebRequest -Uri $PYTHON_URL -OutFile $pythonZip -UseBasicParsing
+New-Item -ItemType Directory -Path $INSTALL_DIR -Force | Out-Null
+Push-Location $INSTALL_DIR
 
-Write-Host "Entpacke Python..." -ForegroundColor Cyan
-Expand-Archive -Path $pythonZip -DestinationPath .
-Remove-Item $pythonZip -Force
+try {
+    # 2. Portable Python installieren
+    $PYTHON_VERSION = "3.11.9"
+    $PYTHON_URL = "https://www.python.org/ftp/python/$PYTHON_VERSION/python-$PYTHON_VERSION-embed-amd64.zip"
+    $pythonZip = "python_embedded.zip"
 
-# 3. Python Umgebung konfigurieren
-Write-Host "Konfiguriere Python Umgebung..." -ForegroundColor Cyan
-# Füge ._pth Datei hinzu für Modulpfade
-Set-Content -Path "python._pth" -Value @"
+    Write-Host "Lade Python $PYTHON_VERSION herunter..." -ForegroundColor Cyan
+    Invoke-WebRequest -Uri $PYTHON_URL -OutFile $pythonZip -UseBasicParsing -ErrorAction Stop
+
+    Write-Host "Entpacke Python..." -ForegroundColor Cyan
+    Expand-Archive -Path $pythonZip -DestinationPath . -ErrorAction Stop
+    Remove-Item $pythonZip -Force -ErrorAction SilentlyContinue
+
+    # 3. Python Umgebung konfigurieren
+    Write-Host "Konfiguriere Python..." -ForegroundColor Cyan
+    Set-Content -Path "python._pth" -Value @"
 python${PYTHON_VERSION}.zip
 .
 import site
-"@
+"@ -ErrorAction Stop
 
-# 4. PIP installieren
-Write-Host "Installiere pip..." -ForegroundColor Cyan
-Invoke-WebRequest -Uri $PIP_URL -OutFile "get-pip.py" -UseBasicParsing
-.\python.exe get-pip.py
-Remove-Item get-pip.py -Force
+    # 4. Pip installieren
+    $PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
+    Write-Host "Installiere pip..." -ForegroundColor Cyan
+    Invoke-WebRequest -Uri $PIP_URL -OutFile "get-pip.py" -UseBasicParsing -ErrorAction Stop
+    .\python.exe get-pip.py --no-warn-script-location
+    if ($LASTEXITCODE -ne 0) { throw "Pip-Installation fehlgeschlagen" }
+    Remove-Item get-pip.py -Force -ErrorAction SilentlyContinue
 
-# 5. Pakete in isolierter Umgebung installieren
-Write-Host "Installiere erforderliche Pakete..." -ForegroundColor Cyan
-$packages = "yt-dlp", "ytmusicapi", "browser_cookie3"
-.\python.exe -m pip install $packages
+    # 5. Pakete installieren
+    $PACKAGES = @("yt-dlp", "ytmusicapi", "browser_cookie3")
+    Write-Host "Installiere Pakete: $($PACKAGES -join ', ')" -ForegroundColor Cyan
+    
+    $installedPackages = @()
+    foreach ($pkg in $PACKAGES) {
+        .\python.exe -m pip install $pkg --no-warn-script-location
+        if ($LASTEXITCODE -eq 0) {
+            $installedPackages += $pkg
+        } else {
+            Write-Host "Warnung: Installation von $pkg fehlgeschlagen" -ForegroundColor Yellow
+        }
+    }
 
-# 6. Startskript erstellen
-Write-Host "Erstelle Startskript..." -ForegroundColor Cyan
-$launcherContent = @"
+    # 6. Startskript erstellen
+    Write-Host "Erstelle Startskript..." -ForegroundColor Cyan
+    Set-Content -Path "jewtube.bat" -Value @"
 @echo off
-setlocal
 set PYTHONPATH=%~dp0
 %~dp0python.exe -m yt_dlp %*
-endlocal
-"@
+"@ -ErrorAction SilentlyContinue
 
-Set-Content -Path "jewtube.bat" -Value $launcherContent
+    # 7. Erfolgsmeldung
+    Write-Host "`n=== Installation erfolgreich! ===" -ForegroundColor Green
+    Write-Host "Installierte Pakete:" -ForegroundColor Green
+    .\python.exe -m pip list --disable-pip-version-check | Select-String -Pattern ($PACKAGES -join "|")
 
-# 7. Erfolgsmeldung und Anleitung
-Write-Host "`nJewTube-Umgebung erfolgreich installiert!" -ForegroundColor Green
-Write-Host "Installationsverzeichnis: $PWD" -ForegroundColor Green
-Write-Host "`nSo verwenden Sie JewTube:" -ForegroundColor Yellow
-Write-Host "1. Führen Sie das Startskript aus: .\jewtube.bat"
-Write-Host "2. Oder verwenden Sie direkt: .\python.exe -m yt_dlp [OPTIONS] URL"
-Write-Host "`nDeinstallation: Löschen Sie einfach den gesamten '$INSTALL_DIR' Ordner" -ForegroundColor Cyan
+    Write-Host "`nVerwendung:" -ForegroundColor Yellow
+    Write-Host "1. Mit Batch-Skript: .\jewtube_env\jewtube.bat [OPTIONS] URL"
+    Write-Host "2. Direkt mit Python: .\jewtube_env\python.exe -m yt_dlp [OPTIONS] URL"
+    Write-Host "`nDeinstallation: Löschen Sie einfach den Ordner '$INSTALL_DIR'" -ForegroundColor Cyan
 
-# 8. Sicherheitsabfrage
-$choice = Read-Host "`nInstallation erfolgreich? (J = Beenden, N = Verzeichnis löschen)"
-if ($choice -eq "N" -or $choice -eq "n") {
-    Write-Host "Entferne Installationsverzeichnis..." -ForegroundColor Yellow
-    Set-Location ..
-    Remove-Item $INSTALL_DIR -Recurse -Force
-    Write-Host "Installation vollständig zurückgerollt!" -ForegroundColor Green
+    # 8. Sicherheitsabfrage
+    $choice = Read-Host "`nInstallation bestätigen? (J = Beenden, N = Verzeichnis löschen)"
+    if ($choice -eq "N" -or $choice -eq "n") {
+        throw "Benutzerabbruch"
+    }
 }
-else {
-    Write-Host "Installation abgeschlossen. Viel Spaß mit JewTube!" -ForegroundColor Green
+catch {
+    Write-Host "`nFEHLER: $_" -ForegroundColor Red
+    Write-Host "Führe Cleanup durch..." -ForegroundColor Yellow
+    
+    try {
+        Pop-Location
+        if (Test-Path $INSTALL_DIR) {
+            Remove-Item $INSTALL_DIR -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host "Installationsverzeichnis entfernt." -ForegroundColor Green
+        }
+    }
+    catch {
+        Write-Host "Cleanup fehlgeschlagen: $_" -ForegroundColor Red
+    }
+    
+    exit 1
 }
+finally {
+    if ((Get-Location).Path -eq $INSTALL_DIR) {
+        Pop-Location
+    }
+}
+
+Write-Host "`nInstallation abgeschlossen! Viel Spaß mit JewTube." -ForegroundColor Green
