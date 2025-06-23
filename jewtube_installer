@@ -1,31 +1,39 @@
-# JewTube Installer mit robuster Python-Erkennung
+# JewTube Installer (Finale Version)
 # Ausführung mit: irm https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer | iex
 
-function Get-ActualPython {
-    # Prüft alle möglichen Python-Pfade
-    $pythonPaths = @(
+function Install-PythonWithWinget {
+    # Installiert Python 3.11 mit winget und stellt sicher, dass es im PATH ist
+    Write-Host "Installiere Python mit winget..." -ForegroundColor Cyan
+    
+    # Führe winget install aus und warte auf Abschluss
+    $process = Start-Process -FilePath "winget" -ArgumentList @(
+        "install",
+        "--id=Python.Python.3.11",
+        "--exact",
+        "--accept-source-agreements",
+        "--accept-package-agreements",
+        "--silent"
+    ) -Wait -PassThru -NoNewWindow
+    
+    if ($process.ExitCode -ne 0) {
+        throw "Python-Installation fehlgeschlagen mit Exit-Code $($process.ExitCode)"
+    }
+    
+    # Aktualisiere den PATH
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + 
+                [System.Environment]::GetEnvironmentVariable("Path", "User")
+    
+    # Finde den Python-Pfad
+    $pythonPath = @(
         "$env:LocalAppData\Programs\Python\Python311\python.exe",
-        "$env:LocalAppData\Programs\Python\Python310\python.exe",
-        "$env:LocalAppData\Programs\Python\Python39\python.exe",
-        "$env:AppData\Python\Python311\python.exe",
-        "C:\Program Files\Python311\python.exe",
-        "C:\Program Files\Python310\python.exe",
-        "C:\Program Files\Python39\python.exe"
-    )
+        "C:\Program Files\Python311\python.exe"
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
     
-    foreach ($path in $pythonPaths) {
-        if (Test-Path $path) {
-            return $path
-        }
+    if (-not $pythonPath) {
+        throw "Python wurde installiert, aber Pfad nicht gefunden"
     }
     
-    # Fallback: Versucht Python über PATH zu finden
-    try {
-        return (Get-Command python -ErrorAction Stop).Source
-    }
-    catch {
-        return $null
-    }
+    return $pythonPath
 }
 
 function Write-Step {
@@ -35,120 +43,97 @@ function Write-Step {
 }
 
 # Admin-Check
-if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+$adminCheck = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+if (-NOT $adminCheck.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "`n⚠️ ADMIN-REICHTE ERFORDERLICH" -ForegroundColor Red
     Write-Host "Das Skript wird sich neu starten..." -ForegroundColor Yellow
     
     $scriptUrl = "https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer"
-    $command = @"
-Start-Process powershell -Verb RunAs -ArgumentList '-NoExit -NoProfile -ExecutionPolicy Bypass -Command "irm \`"$scriptUrl\`" | iex"'
-"@
-
+    $command = "Start-Process powershell -Verb RunAs -ArgumentList '-NoExit -Command \"irm $scriptUrl | iex\"'"
     Invoke-Expression $command
     exit
 }
 
 ### HAUPTPROGRAMM ###
 try {
-    # 0. Python-Pfad ermitteln
-    $pythonExe = Get-ActualPython
-    
     # 1. Winget Installation
-    Write-Step -step 1 -message "Überprüfe winget Installation"
+    Write-Step -step 1 -message "Überprüfe winget"
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-Host "Winget nicht gefunden, installiere..." -ForegroundColor Yellow
-        
+        Write-Host "Installiere winget..." -ForegroundColor Yellow
         $tempFile = "$env:TEMP\winget_install.msixbundle"
+        
         try {
             Invoke-WebRequest -Uri https://aka.ms/getwinget -OutFile $tempFile -UseBasicParsing
             Add-AppxPackage -Path $tempFile -ErrorAction Stop
-            Write-Host "✅ Winget erfolgreich installiert" -ForegroundColor Green
         }
         catch {
-            Write-Host "❌ Fehler: $_" -ForegroundColor Red
-            throw "Winget Installation fehlgeschlagen"
+            throw "Winget-Installation fehlgeschlagen: $_"
         }
         finally {
-            if (Test-Path $tempFile) { Remove-Item $tempFile }
+            Remove-Item $tempFile -ErrorAction SilentlyContinue
         }
     }
     else {
-        Write-Host "Winget bereits installiert" -ForegroundColor Green
+        Write-Host "Winget ist installiert" -ForegroundColor Green
     }
 
     # 2. Python Installation
     Write-Step -step 2 -message "Überprüfe Python 3.11"
+    $pythonExe = $null
+    
+    # Versuche Python zu finden
+    $pythonExe = @(
+        "$env:LocalAppData\Programs\Python\Python311\python.exe",
+        "C:\Program Files\Python311\python.exe",
+        (Get-Command python -ErrorAction SilentlyContinue).Source
+    ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+
     if (-not $pythonExe) {
         Write-Host "Python nicht gefunden, installiere..." -ForegroundColor Yellow
-        
-        try {
-            winget install --id Python.Python.3.11 --exact --accept-source-agreements --accept-package-agreements
-            $pythonExe = Get-ActualPython
-            
-            if (-not $pythonExe) {
-                throw "Python installiert, aber nicht gefunden"
-            }
-            
-            Write-Host "✅ Python erfolgreich installiert: $pythonExe" -ForegroundColor Green
-        }
-        catch {
-            Write-Host "❌ Fehler: $_" -ForegroundColor Red
-            throw "Python Installation fehlgeschlagen"
-        }
+        $pythonExe = Install-PythonWithWinget
+        Write-Host "✅ Python installiert: $pythonExe" -ForegroundColor Green
     }
     else {
         Write-Host "Python gefunden: $pythonExe" -ForegroundColor Green
         Write-Host "Version: $(& `"$pythonExe`" --version 2>&1)" -ForegroundColor Green
     }
 
-    # 3. Paketinstallation
+    # 3. Pakete installieren
     Write-Step -step 3 -message "Installiere benötigte Pakete"
-    $packages = @(
-        @{Name="yt-dlp"; Test="import yt_dlp; print(f'Version: {yt_dlp.__version__}')"},
-        @{Name="ytmusicapi"; Test="import ytmusicapi; print(f'Version: {ytmusicapi.__version__}')"},
-        @{Name="browser-cookie3"; Test="import browser_cookie3; print('Import erfolgreich')"}
-    )
-
+    $packages = @("yt-dlp", "ytmusicapi", "browser-cookie3")
+    
     foreach ($pkg in $packages) {
-        Write-Host "`n🔄 Installiere $($pkg.Name)..." -ForegroundColor Blue
-        try {
-            # Installiere Paket
-            & `"$pythonExe`" -m pip install --upgrade $pkg.Name --disable-pip-version-check
-            
-            # Verifiziere Installation
-            $result = & `"$pythonExe`" -c $pkg.Test 2>&1
-            Write-Host "✅ $($pkg.Name) installiert: $result" -ForegroundColor Green
-        }
-        catch {
-            Write-Host "⚠️ Warnung: $($pkg.Name) konnte nicht verifiziert werden: $_" -ForegroundColor Yellow
-        }
+        Write-Host "`n🔄 Installiere $pkg..." -ForegroundColor Blue
+        & `"$pythonExe`" -m pip install --upgrade $pkg --disable-pip-version-check
+        
+        # Verifiziere Installation
+        $pkgName = $pkg.Replace('-', '_')
+        $testResult = & `"$pythonExe`" -c "import $pkgName; print('✅ Erfolgreich')" 2>&1
+        Write-Host $testResult -ForegroundColor Green
     }
 
     # 4. Abschluss
     Write-Step -step 4 -message "Installation abgeschlossen"
     Write-Host "`n🎉 JEWTUBE ERFOLGREICH INSTALLIERT" -ForegroundColor Green
     
-    # Systeminformationen
     Write-Host "`nSysteminformationen:" -ForegroundColor Cyan
     Write-Host "Python: $(& `"$pythonExe`" --version 2>&1)" -ForegroundColor Gray
     Write-Host "yt-dlp: $(& `"$pythonExe`" -c 'import yt_dlp; print(yt_dlp.__version__)' 2>&1)" -ForegroundColor Gray
     Write-Host "ytmusicapi: $(& `"$pythonExe`" -c 'import ytmusicapi; print(ytmusicapi.__version__)' 2>&1)" -ForegroundColor Gray
     
     Write-Host "`nVerfügbare Kommandos:" -ForegroundColor Cyan
-    Write-Host "• `"$pythonExe`" -m yt_dlp [URL]" -ForegroundColor White
-    Write-Host "• `"$pythonExe`" -m ytmusicapi" -ForegroundColor White
+    Write-Host "• & `"$pythonExe`" -m yt_dlp [URL]" -ForegroundColor White
+    Write-Host "• & `"$pythonExe`" -m ytmusicapi" -ForegroundColor White
 }
 catch {
-    Write-Host "`n❌❌❌ KRITISCHER FEHLER ❌❌❌" -ForegroundColor Red
-    Write-Host "Fehlerdetails: $_" -ForegroundColor Red
+    Write-Host "`n❌❌❌ FEHLER: $_" -ForegroundColor Red
     $errorOccurred = $true
 }
 
 # Warte auf Benutzereingabe
-Write-Host "`n" # Leerzeile
-Write-Host "========================================" -ForegroundColor DarkGray
+Write-Host "`n========================================" -ForegroundColor DarkGray
 if ($errorOccurred) {
-    Write-Host " FEHLER BEI DER INSTALLATION " -BackgroundColor Red -ForegroundColor White
+    Write-Host " INSTALLATION FEHLGESCHLAGEN " -BackgroundColor Red -ForegroundColor White
 }
 else {
     Write-Host " INSTALLATION ERFOLGREICH " -BackgroundColor Green -ForegroundColor Black
