@@ -6,7 +6,7 @@ Write-Host "  JEWTUBE ENVIRONMENT INSTALLER " -ForegroundColor Cyan
 Write-Host "===============================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "This script will check and install all required components:" -ForegroundColor White
-Write-Host " - Python 3.8+"
+Write-Host " - Python 3.8+ (via py -3 launcher)"
 Write-Host " - pip"
 Write-Host " - yt-dlp"
 Write-Host " - ytmusicapi"
@@ -19,7 +19,10 @@ function Write-Info($m)    { Write-Host $m -ForegroundColor White }
 function Write-Success($m) { Write-Host "SUCCESS: $m" -ForegroundColor Green }
 function Write-Warn($m)    { Write-Host "WARNING: $m" -ForegroundColor Red }
 
-# 1) Winget
+# Use Python launcher
+$pythonExe = if (Get-Command py -ErrorAction SilentlyContinue) { "py -3" } else { "python" }
+
+# 1) winget
 Write-Info "1) Checking for winget..."
 if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
     Write-Warn "winget not found! Cannot auto-install Python."
@@ -29,15 +32,22 @@ Write-Success "winget found."
 Wait-User
 
 # 2) Python
-Write-Info "2) Checking for Python..."
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+Write-Info "2) Checking for Python via launcher ($pythonExe)..."
+try {
+    $ver = & $pythonExe "--version" 2>&1
+    Write-Success "Python found: $ver"
+} catch {
     Write-Warn "Python not found! Installing via winget..."
     Wait-User
     winget install --id Python.Python.3 --silent --accept-source-agreements --accept-package-agreements
     Start-Sleep -Seconds 10
-    Write-Success "Python installed."
-} else {
-    Write-Success "Python found: $(python --version)"
+    try {
+        $ver = & $pythonExe "--version" 2>&1
+        Write-Success "Python installed: $ver"
+    } catch {
+        Write-Warn "Failed to install Python."
+        Wait-User; exit 1
+    }
 }
 Wait-User
 
@@ -46,18 +56,19 @@ $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine")
 
 # 3) pip
 Write-Info "3) Checking for pip..."
-if (-not (Get-Command pip -ErrorAction SilentlyContinue)) {
-    Write-Info "Installing pip..."
-    python -m ensurepip --upgrade
+try {
+    $pipVer = & $pythonExe -m pip --version 2>&1
+    Write-Success "pip found: $pipVer"
+} catch {
+    Write-Info "pip not found. Installing ensurepip..."
+    & $pythonExe -m ensurepip --upgrade | Out-Null
     Write-Success "pip installed."
-} else {
-    Write-Success "pip found: $(pip --version)"
 }
 Wait-User
 
 # 4) Upgrade pip
 Write-Info "4) Upgrading pip..."
-python -m pip install --upgrade pip
+& $pythonExe -m pip install --upgrade pip
 Write-Success "pip upgraded."
 Wait-User
 
@@ -65,7 +76,7 @@ Wait-User
 $pkgs = @("yt-dlp","ytmusicapi","browser_cookie3")
 Write-Info "5) Installing Python packages: $($pkgs -join ', ')..."
 Wait-User
-python -m pip install --upgrade $pkgs
+& $pythonExe -m pip install --upgrade $pkgs
 Write-Success "Packages installed."
 Wait-User
 
@@ -73,7 +84,7 @@ Wait-User
 Write-Info "6) Verifying installations..."
 $errors = 0
 foreach ($m in @("ytmusicapi","browser_cookie3")) {
-    python -c "import $m" 2>$null
+    & $pythonExe -c "import $m" 2>$null
     if ($LASTEXITCODE -eq 0) {
         Write-Success "$m OK"
     } else {
@@ -84,7 +95,7 @@ foreach ($m in @("ytmusicapi","browser_cookie3")) {
 }
 
 try {
-    $v = yt-dlp --version 2>&1
+    $v = & yt-dlp --version 2>&1
     Write-Success "yt-dlp OK: Version $v"
 } catch {
     Write-Warn "yt-dlp FAILED"
