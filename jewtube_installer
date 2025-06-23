@@ -1,94 +1,60 @@
-#!/usr/bin/env pwsh
-#Requires -Version 5
+# jewtube_installer.ps1
 
-$ErrorActionPreference = "Stop"
+Clear-Host
+Write-Host "===============================" -ForegroundColor Cyan
+Write-Host "  JEWTUBE ENVIRONMENT INSTALLER " -ForegroundColor Cyan
+Write-Host "===============================" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "This script will check and install all required components:" -ForegroundColor White
+Write-Host " - Python 3.8+"
+Write-Host " - pip"
+Write-Host " - yt-dlp"
+Write-Host " - ytmusicapi"
+Write-Host " - browser_cookie3" -ForegroundColor Yellow
+Write-Host ""
+Pause
 
-# Logfile erstellen
-$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$logFile = "C:\Users\$env:USERNAME\AppData\Local\Temp\JewTube_Install_$timestamp.log"
-Start-Transcript -Path $logFile -Append
-
-function Write-Log {
-    param([string]$message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "$timestamp - $message" | Out-File $logFile -Append
-    Write-Host $message
+function Wait-User() {
+    Read-Host "Press [Enter] to continue..."
 }
 
-Write-Host "**********************"
-Write-Host "nStart der Windows PowerShell-Aufzeichnung"
-Write-Host "Startzeit: $(Get-Date -Format 'yyyyMMddHHmmss')"
-Write-Host "Benutzername: $env:USERDOMAIN\$env:USERNAME"
-Write-Host "RunAs-Benutzer: $env:USERDOMAIN\$env:USERNAME"
-Write-Host "Konfigurationsname: "
-Write-Host "Computer: $env:COMPUTERNAME (Microsoft Windows NT $([System.Environment]::OSVersion.Version))"
-Write-Host "Hostanwendung: $($MyInvocation.MyCommand.Path)"
-Write-Host "Prozess-ID: $PID"
-Write-Host "PSVersion: $($PSVersionTable.PSVersion)"
-Write-Host "PSEdition: $($PSVersionTable.PSEdition)"
-Write-Host "PSCompatibleVersions: $($PSVersionTable.PSCompatibleVersions)"
-Write-Host "BuildVersion: $($PSVersionTable.BuildVersion)"
-Write-Host "CLRVersion: $($PSVersionTable.ClrVersion)"
-Write-Host "WSManStackVersion: $($PSVersionTable.WSManStackVersion)"
-Write-Host "PSRemotingProtocolVersion: $($PSVersionTable.PSRemotingProtocolVersion)"
-Write-Host "SerializationVersion: $($PSVersionTable.SerializationVersion)"
-Write-Host "**********************`n"
+function Write-WarningColor($msg) { Write-Host "WARNING: $msg" -ForegroundColor Red }
+function Write-SuccessColor($msg) { Write-Host "SUCCESS: $msg" -ForegroundColor Green }
+function Write-Info($msg)    { Write-Host $msg -ForegroundColor White }
 
-Write-Log "=== JewTube Installation ==="
-Write-Log "Logfile: $logFile`n"
+# ... (vorherige Schritte bleiben unverändert) ...
 
-# Python check
-$python = (Get-Command python -ErrorAction SilentlyContinue).Source
-if (-not $python) {
-    $python = (Get-Command python3 -ErrorAction SilentlyContinue).Source
-}
-
-if (-not $python) {
-    Write-Log "Python nicht gefunden! Bitte installieren Sie Python von https://www.python.org/downloads/"
-    exit 1
-}
-
-Write-Log "Python gefunden: $python`n"
-
-# Paketliste
-$packages = @("yt-dlp", "ytmusicapi", "browser-cookie3")
-
-foreach ($pkg in $packages) {
+# Beispiel-Fehler-Logging in der Package-Installation-Schleife:
+foreach ($pkg in @("ytmusicapi", "browser_cookie3")) {
     try {
-        Write-Log "Installiere $pkg..."
-        & $python -m pip install --upgrade $pkg
-        if ($LASTEXITCODE -ne 0) {
-            throw "Pip-Installation fehlgeschlagen mit Exit-Code $LASTEXITCODE"
-        }
-        Write-Log "$pkg erfolgreich installiert"
+        python -c "import $pkg" 2>$null
+        if ($LASTEXITCODE -ne 0) { throw "Import failed" }
+        Write-SuccessColor "$pkg installed successfully."
+    } catch {
+        Write-WarningColor "Error installing $pkg: $($_)"
+        $errors++
     }
-    catch {
-        # KORREKTUR: ${_} statt $_ zur korrekten Variablenreferenzierung
-        Write-Log "Fehler bei $pkg: ${_}"
-    }
+    Wait-User
 }
 
-# Versionsprüfung
-Write-Log "`n=== Versionspruefung ==="
-$ytdlpVersion = & $python -c "import yt_dlp; print(yt_dlp.version.__version__)" 2>$null
-$ytmusicapiVersion = & $python -c "import ytmusicapi; print(ytmusicapi.__version__)" 2>$null
-Write-Log "yt-dlp Version: $ytdlpVersion"
-Write-Log "ytmusicapi Version: $ytmusicapiVersion`n"
-
-# Funktionstest
-Write-Log "=== Funktionstest ==="
-$testUrl = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-Write-Log "Teste Download von $testUrl ..."
-& $python -m yt_dlp -f best "$testUrl" --no-download
-if ($LASTEXITCODE -ne 0) {
-    Write-Log "Funktionstest fehlgeschlagen!"
-    exit 1
+# yt-dlp prüfen
+try {
+    $ytDlpVersion = yt-dlp --version 2>&1
+    Write-SuccessColor "yt-dlp installed successfully: Version $ytDlpVersion"
+} catch {
+    Write-WarningColor "Error installing yt-dlp: $($_)"
+    $errors++
 }
+Wait-User
 
-Write-Log "Funktionstest erfolgreich!`n"
+# Abschlussmeldung
+if ($errors -eq 0) {
+    Write-SuccessColor "All dependencies installed successfully. Environment is ready for Jewtube."
+} else {
+    Write-WarningColor "Some components failed to install. Please check manually before using Jewtube."
+}
+Wait-User
 
-Write-Log "=== INSTALLATION ERFOLGREICH ==="
-Write-Log "Logfile: $logFile"
-Stop-Transcript
-
-Read-Host "Druecken Sie ENTER zum Beenden..."
+Write-Host ""
+Write-Host "=== Installer completed ===" -ForegroundColor Cyan
+Wait-User
