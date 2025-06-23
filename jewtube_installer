@@ -25,7 +25,7 @@ function Write-Info($msg)    { Write-Host $msg -ForegroundColor White }
 
 # Check Winget
 Write-Info "Checking for Winget..."
-$wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
+$wingetCmd = Get-Command winget
 if ($null -eq $wingetCmd) {
     Write-WarningColor "Winget not found! Cannot auto-install Python. Install manually and re-run this script."
     Wait-User
