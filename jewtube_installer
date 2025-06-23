@@ -1,4 +1,4 @@
-# jewtube_installer.ps1
+# Jewtube Environment Installer
 
 # 0) Self-elevation to Administrator
 if (-not ([Security.Principal.WindowsPrincipal] `
@@ -117,9 +117,9 @@ foreach ($m in @("ytmusicapi","browser_cookie3")) {
     Wait-User
 }
 
-# Explicit yt-dlp.exe check
-$ytDlpExe = Join-Path $userScripts 'yt-dlp.exe'
-if (Test-Path $ytDlpExe) {
+# yt-dlp.exe check via PATH
+$ytDlpExe = Get-Command yt-dlp.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+if ($ytDlpExe) {
     try {
         $v = & $ytDlpExe --version 2>&1
         Write-Success "yt-dlp OK: Version $v"
@@ -128,18 +128,10 @@ if (Test-Path $ytDlpExe) {
         $errors++
     }
 } else {
-    Write-Warn "yt-dlp.exe not found at $userScripts"
+    Write-Warn "yt-dlp.exe not found in PATH"
     $errors++
 }
 Wait-User
 
 # 9) Final summary
 if ($errors -eq 0) {
-    Write-Success "All components are installed and verified. Jewtube is ready!"
-} else {
-    Write-Warn "Some components failed. Please check above messages."
-}
-Wait-User
-
-Write-Host "`n=== Installer completed ===" -ForegroundColor Cyan
-Wait-User
