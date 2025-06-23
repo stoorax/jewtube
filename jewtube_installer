@@ -6,20 +6,20 @@ Write-Host "  JEWTUBE ENVIRONMENT INSTALLER " -ForegroundColor Cyan
 Write-Host "===============================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "This script will check and install all required components:" -ForegroundColor White
-Write-Host " - Python 3.8+ (via py -3 launcher)" 
-Write-Host " - pip"
-Write-Host " - yt-dlp"
-Write-Host " - ytmusicapi"
+Write-Host " - Python 3.8+ (via py launcher)" -ForegroundColor White
+Write-Host " - pip" -ForegroundColor White
+Write-Host " - yt-dlp" -ForegroundColor White
+Write-Host " - ytmusicapi" -ForegroundColor White
 Write-Host " - browser_cookie3" -ForegroundColor Yellow
 Write-Host ""
 Pause
 
 function Wait-User() { Read-Host "Press [Enter] to continue..." }
-function Write-Info($m)    { Write-Host $m -ForegroundColor White }
-function Write-Success($m) { Write-Host "SUCCESS: $m" -ForegroundColor Green }
-function Write-Warn($m)    { Write-Host "WARNING: $m" -ForegroundColor Red }
+function Write-Info ($m)    { Write-Host $m -ForegroundColor White }
+function Write-Success ($m) { Write-Host "SUCCESS: $m" -ForegroundColor Green }
+function Write-Warn ($m)    { Write-Host "WARNING: $m" -ForegroundColor Red }
 
-# Determine Python executable
+# 0) Determine Python executable
 if (Get-Command py -ErrorAction SilentlyContinue) {
     $pythonExe = "py"
 } else {
@@ -28,7 +28,7 @@ if (Get-Command py -ErrorAction SilentlyContinue) {
 Write-Info "Using Python command: $pythonExe"
 Wait-User
 
-# 1) winget
+# 1) Check winget
 Write-Info "1) Checking for winget..."
 if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
     Write-Warn "winget not found! Cannot auto-install Python."
@@ -37,7 +37,7 @@ if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
 Write-Success "winget found."
 Wait-User
 
-# 2) Python
+# 2) Check/install Python
 Write-Info "2) Checking for Python..."
 try {
     $ver = & $pythonExe --version 2>&1
@@ -46,6 +46,7 @@ try {
     Write-Warn "Python not found! Installing via winget..."
     Wait-User
     winget install --id Python.Python.3 --silent --accept-source-agreements --accept-package-agreements
+    Write-Info "Waiting for Python install to finish..."
     Start-Sleep -Seconds 10
     try {
         $ver = & $pythonExe --version 2>&1
@@ -57,38 +58,43 @@ try {
 }
 Wait-User
 
-# Reload PATH
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine")
+# 3) Add user Scripts folder to PATH (where pip puts executables)
+$userBase = & $pythonExe -m site --user-base
+$userScripts = Join-Path $userBase 'Scripts'
+$env:Path = "$env:Path;$userScripts"
+Write-Info "Added user Scripts path to PATH: $userScripts"
+Wait-User
 
-# 3) pip
-Write-Info "3) Checking for pip..."
+# 4) Check/install pip
+Write-Info "4) Checking for pip..."
 try {
     $pipVer = & $pythonExe -m pip --version 2>&1
     Write-Success "pip found: $pipVer"
 } catch {
-    Write-Info "pip not found. Installing ensurepip..."
+    Write-Info "pip not found. Installing via ensurepip..."
     & $pythonExe -m ensurepip --upgrade | Out-Null
     Write-Success "pip installed."
 }
 Wait-User
 
-# 4) Upgrade pip
-Write-Info "4) Upgrading pip..."
+# 5) Upgrade pip
+Write-Info "5) Upgrading pip to latest version..."
 & $pythonExe -m pip install --upgrade pip
 Write-Success "pip upgraded."
 Wait-User
 
-# 5) Install Python packages
+# 6) Install required Python packages
 $pkgs = @("yt-dlp","ytmusicapi","browser_cookie3")
-Write-Info "5) Installing Python packages: $($pkgs -join ', ')..."
+Write-Info "6) Installing Python packages: $($pkgs -join ', ')..."
 Wait-User
 & $pythonExe -m pip install --upgrade $pkgs
 Write-Success "Packages installed."
 Wait-User
 
-# 6) Verify modules
-Write-Info "6) Verifying installations..."
+# 7) Verify installations
+Write-Info "7) Verifying installations..."
 $errors = 0
+
 foreach ($m in @("ytmusicapi","browser_cookie3")) {
     & $pythonExe -c "import $m" 2>$null
     if ($LASTEXITCODE -eq 0) {
@@ -109,7 +115,7 @@ try {
 }
 Wait-User
 
-# 7) Final
+# 8) Final summary
 if ($errors -eq 0) {
     Write-Success "All components are installed and verified. Jewtube is ready!"
 } else {
