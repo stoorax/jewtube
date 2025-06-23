@@ -14,107 +14,91 @@ Write-Host " - browser_cookie3" -ForegroundColor Yellow
 Write-Host ""
 Pause
 
-function Wait-User() {
-    Read-Host "Press [Enter] to continue..."
-}
+function Wait-User() { Read-Host "Press [Enter] to continue..." }
+function Write-Info($m)    { Write-Host $m -ForegroundColor White }
+function Write-Success($m) { Write-Host "SUCCESS: $m" -ForegroundColor Green }
+function Write-Warn($m)    { Write-Host "WARNING: $m" -ForegroundColor Red }
 
-function Write-WarningColor($msg) { Write-Host "WARNING: $msg" -ForegroundColor Red }
-function Write-SuccessColor($msg) { Write-Host "SUCCESS: $msg" -ForegroundColor Green }
-function Write-Info($msg)    { Write-Host $msg -ForegroundColor White }
-
-# Check Winget
-Write-Info "Checking for Winget..."
-$wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
-if ($null -eq $wingetCmd) {
-    Write-WarningColor "Winget not found! Cannot auto-install Python. Install manually and re-run this script."
+# 1) Winget
+Write-Info "1) Checking for winget..."
+if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+    Write-Warn "winget not found! Cannot auto-install Python."
     Wait-User; exit 1
-} else {
-    Write-SuccessColor "Winget found."
 }
+Write-Success "winget found."
 Wait-User
 
-# Check Python
-Write-Info "Checking for Python installation..."
-$pythonCmd = Get-Command python -ErrorAction SilentlyContinue
-if ($null -eq $pythonCmd) {
-    Write-WarningColor "Python not found! Installing via winget now..."
+# 2) Python
+Write-Info "2) Checking for Python..."
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    Write-Warn "Python not found! Installing via winget..."
     Wait-User
-    winget install --id Python.Python.3 --source winget --silent --accept-source-agreements --accept-package-agreements
-    Write-Info "Waiting for Python install to finish..."
+    winget install --id Python.Python.3 --silent --accept-source-agreements --accept-package-agreements
     Start-Sleep -Seconds 10
+    Write-Success "Python installed."
 } else {
-    Write-SuccessColor "Python found: $(python --version)"
+    Write-Success "Python found: $(python --version)"
 }
 Wait-User
 
-# Reload PATH for this session
+# Reload PATH
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine")
 
-# Check pip
-Write-Info "Checking for pip..."
-$pipCmd = Get-Command pip -ErrorAction SilentlyContinue
-if ($null -eq $pipCmd) {
-    Write-Info "Ensuring pip is installed..."
+# 3) pip
+Write-Info "3) Checking for pip..."
+if (-not (Get-Command pip -ErrorAction SilentlyContinue)) {
+    Write-Info "Installing pip..."
     python -m ensurepip --upgrade
+    Write-Success "pip installed."
 } else {
-    Write-SuccessColor "Pip found: $(pip --version)"
+    Write-Success "pip found: $(pip --version)"
 }
 Wait-User
 
-# Upgrade pip
-Write-Info "Upgrading pip to latest version..."
+# 4) Upgrade pip
+Write-Info "4) Upgrading pip..."
 python -m pip install --upgrade pip
-Write-SuccessColor "Pip upgrade done."
+Write-Success "pip upgraded."
 Wait-User
 
-# Install required Python packages
-$packages = @("yt-dlp", "ytmusicapi", "browser_cookie3")
-Write-Info "Installing required Python packages: $($packages -join ', ') ..."
-Pause
-python -m pip install --upgrade $packages
-Write-SuccessColor "Package installation complete."
+# 5) Install Python packages
+$pkgs = @("yt-dlp","ytmusicapi","browser_cookie3")
+Write-Info "5) Installing Python packages: $($pkgs -join ', ')..."
+Wait-User
+python -m pip install --upgrade $pkgs
+Write-Success "Packages installed."
 Wait-User
 
-# Final checks
-function Check-PythonModule($module) {
-    python -c "import $module" 2>$null
-    return $LASTEXITCODE -eq 0
-}
-
+# 6) Verify modules
+Write-Info "6) Verifying installations..."
 $errors = 0
-foreach ($pkg in @("ytmusicapi", "browser_cookie3")) {
-    try {
-        if (Check-PythonModule $pkg) {
-            Write-SuccessColor "$pkg installed successfully."
-        } else {
-            throw "module import failed"
-        }
-    } catch {
-        # richtige String-Formatierung via -f
-        Write-WarningColor ("Error installing {0}: {1}" -f $pkg, $_)
+foreach ($m in @("ytmusicapi","browser_cookie3")) {
+    python -c "import $m" 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Success "$m OK"
+    } else {
+        Write-Warn "$m FAILED"
         $errors++
     }
     Wait-User
 }
 
 try {
-    $ytDlpVersion = yt-dlp --version 2>&1
-    Write-SuccessColor "yt-dlp installed successfully: Version $ytDlpVersion"
+    $v = yt-dlp --version 2>&1
+    Write-Success "yt-dlp OK: Version $v"
 } catch {
-    Write-WarningColor ("Error installing yt-dlp: {0}" -f $_)
+    Write-Warn "yt-dlp FAILED"
     $errors++
 }
 Wait-User
 
+# 7) Final
 if ($errors -eq 0) {
-    Write-Host ""
-    Write-SuccessColor "All dependencies installed successfully. Environment is ready for Jewtube."
+    Write-Success "All components are installed and verified. Jewtube is ready!"
 } else {
-    Write-Host ""
-    Write-WarningColor "Some components failed to install. Please check manually before using Jewtube."
+    Write-Warn "Some components failed. Please check above messages."
 }
 Wait-User
 
-Write-Host ""
-Write-Host "=== Installer completed ===" -ForegroundColor Cyan
+Write-Host "`n=== Installer completed ===" -ForegroundColor Cyan
 Wait-User
