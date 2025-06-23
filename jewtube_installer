@@ -6,7 +6,7 @@ Write-Host "  JEWTUBE ENVIRONMENT INSTALLER " -ForegroundColor Cyan
 Write-Host "===============================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "This script will check and install all required components:" -ForegroundColor White
-Write-Host " - Python 3.8+ (via py -3 launcher)"
+Write-Host " - Python 3.8+ (via py -3 launcher)" 
 Write-Host " - pip"
 Write-Host " - yt-dlp"
 Write-Host " - ytmusicapi"
@@ -19,8 +19,14 @@ function Write-Info($m)    { Write-Host $m -ForegroundColor White }
 function Write-Success($m) { Write-Host "SUCCESS: $m" -ForegroundColor Green }
 function Write-Warn($m)    { Write-Host "WARNING: $m" -ForegroundColor Red }
 
-# Use Python launcher
-$pythonExe = if (Get-Command py -ErrorAction SilentlyContinue) { "py -3" } else { "python" }
+# Determine Python executable
+if (Get-Command py -ErrorAction SilentlyContinue) {
+    $pythonExe = "py -3"
+} else {
+    $pythonExe = "python"
+}
+Write-Info "Using Python command: $pythonExe"
+Wait-User
 
 # 1) winget
 Write-Info "1) Checking for winget..."
@@ -32,9 +38,9 @@ Write-Success "winget found."
 Wait-User
 
 # 2) Python
-Write-Info "2) Checking for Python via launcher ($pythonExe)..."
+Write-Info "2) Checking for Python..."
 try {
-    $ver = & $pythonExe "--version" 2>&1
+    $ver = & $pythonExe --version 2>&1
     Write-Success "Python found: $ver"
 } catch {
     Write-Warn "Python not found! Installing via winget..."
@@ -42,7 +48,7 @@ try {
     winget install --id Python.Python.3 --silent --accept-source-agreements --accept-package-agreements
     Start-Sleep -Seconds 10
     try {
-        $ver = & $pythonExe "--version" 2>&1
+        $ver = & $pythonExe --version 2>&1
         Write-Success "Python installed: $ver"
     } catch {
         Write-Warn "Failed to install Python."
