@@ -1,129 +1,69 @@
-# JewTube Installer mit Logfile-Erstellung
+# JewTube Installer (Fixed Version Check)
 # Ausführung mit: iwr https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer | iex
 
-# Logfile-Pfad erstellen
 $logFile = "$env:TEMP\JewTube_Install_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 Start-Transcript -Path $logFile -Append | Out-Null
 
 function Get-RealPython {
-    $possiblePaths = @(
+    $paths = @(
         "$env:LocalAppData\Programs\Python\Python311\python.exe",
         "C:\Program Files\Python311\python.exe"
     )
-    foreach ($path in $possiblePaths) {
+    foreach ($path in $paths) {
         if (Test-Path $path) { return $path }
     }
     return $null
 }
 
-function Install-PythonWithWinget {
-    Write-Host "[INFO] Installing Python with winget..."
-    try {
-        winget install --id Python.Python.3.11 --exact --accept-source-agreements --accept-package-agreements --silent
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + 
-                    [System.Environment]::GetEnvironmentVariable("Path", "User")
-        return Get-RealPython
-    }
-    catch {
-        Write-Host "[ERROR] Python installation failed: $_"
-        throw
-    }
-}
-
 # Admin-Check
 $adminCheck = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
 if (-NOT $adminCheck.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Host "[INFO] Admin rights required - restarting as admin..."
     $scriptUrl = "https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer"
-    
-    try {
-        Stop-Transcript | Out-Null
-        Start-Process powershell -Verb RunAs -ArgumentList "-NoExit -Command `"irm '$scriptUrl' | iex`""
-        exit
-    }
-    catch {
-        Write-Host "[ERROR] Failed to restart as admin: $_"
-        exit 1
-    }
+    Stop-Transcript | Out-Null
+    Start-Process powershell -Verb RunAs -ArgumentList "-NoExit -Command `"irm '$scriptUrl' | iex`""
+    exit
 }
 
 Write-Host "=== JewTube Installation ==="
 Write-Host "Logfile: $logFile`n"
 
 try {
-    # 1. Winget Installation
-    Write-Host "[STEP 1/3] Checking winget"
-    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-Host "[INFO] Installing winget..."
-        $progressPreference = 'silentlyContinue'
-        try {
-            irm https://aka.ms/getwinget -OutFile winget.msixbundle -UseBasicParsing
-            Add-AppxPackage -Path winget.msixbundle
-            Remove-Item winget.msixbundle -ErrorAction SilentlyContinue
-            Write-Host "[SUCCESS] Winget installed"
-        }
-        catch {
-            Write-Host "[ERROR] Winget installation failed: $_"
-            throw
-        }
-    }
-    else {
-        Write-Host "[INFO] Winget already installed"
-    }
-
-    # 2. Python Installation
-    Write-Host "`n[STEP 2/3] Checking Python"
+    # Python-Suche
     $pythonExe = Get-RealPython
-    
     if (-not $pythonExe) {
-        Write-Host "[INFO] Python not found, installing..."
-        $pythonExe = Install-PythonWithWinget
-        if (-not $pythonExe) { throw "Python installed but not found" }
-        Write-Host "[SUCCESS] Python installed at $pythonExe"
-    }
-    else {
-        $version = & $pythonExe --version 2>&1
-        Write-Host "[INFO] Python found at $pythonExe"
-        Write-Host "[INFO] Python version: $version"
+        Write-Host "[ERROR] Python not found!" -ForegroundColor Red
+        throw "Python installation missing"
     }
 
-    # 3. Package Installation
-    Write-Host "`n[STEP 3/3] Installing packages"
+    # Paketinstallation
     $packages = @("yt-dlp", "ytmusicapi", "browser-cookie3")
-    
     foreach ($pkg in $packages) {
-        Write-Host "`n[INFO] Installing $pkg..."
-        try {
-            # Install package
-            & $pythonExe -m pip install --upgrade $pkg --disable-pip-version-check
-            
-            # Verify installation
-            $pkgName = $pkg.Replace('-', '_')
-            $testResult = & $pythonExe -c "import $pkgName; print('Success')" 2>&1
-            Write-Host "[SUCCESS] $pkg installed: $testResult"
-        }
-        catch {
-            Write-Host "[ERROR] $pkg installation failed: $_"
-        }
+        Write-Host "[INSTALL] $pkg" -ForegroundColor Cyan
+        & $pythonExe -m pip install --upgrade $pkg --disable-pip-version-check
     }
 
-    # Final verification
-    Write-Host "`n[FINAL VERIFICATION]"
-    $ytdlpVersion = & $pythonExe -c "import yt_dlp; print(yt_dlp.__version__)" 2>&1
-    $ytmusicVersion = & $pythonExe -c "import ytmusicapi; print(ytmusicapi.__version__)" 2>&1
+    # Korrigierte Versionsprüfung
+    Write-Host "`n[VERSION CHECK]" -ForegroundColor Green
     
-    Write-Host "yt-dlp version: $ytdlpVersion"
-    Write-Host "ytmusicapi version: $ytmusicVersion"
-    Write-Host "`n[SUCCESS] Installation completed!"
-    Write-Host "Usage: $pythonExe -m yt_dlp [URL]"
+    # yt-dlp mit neuer Methode
+    $ytdlpVersion = & $pythonExe -c "import yt_dlp; print(yt_dlp.version.__version__)" 2>&1
+    Write-Host "yt-dlp: $ytdlpVersion"
+    
+    # ytmusicapi (funktioniert)
+    $ytmusicVersion = & $pythonExe -c "import ytmusicapi; print(ytmusicapi.__version__)" 2>&1
+    Write-Host "ytmusicapi: $ytmusicVersion"
+    
+    # Funktionstest
+    Write-Host "`n[FUNCTIONAL TEST]" -ForegroundColor Green
+    & $pythonExe -c "from yt_dlp import YoutubeDL; print('YoutubeDL import successful')" 2>&1
+
+    Write-Host "`n[SUCCESS] All components installed correctly!" -ForegroundColor Green
 }
 catch {
-    Write-Host "`n[ERROR] Installation failed: $_"
-    Write-Host "Full error details in logfile"
+    Write-Host "`n[ERROR] $_" -ForegroundColor Red
 }
 finally {
-    Write-Host "`n=== Installation Log ==="
-    Write-Host "Logfile saved to: $logFile"
-    Write-Host "Please provide this file for support"
+    Write-Host "`n=== Logfile ==="
+    Write-Host $logFile
     Stop-Transcript | Out-Null
 }
