@@ -1,5 +1,32 @@
-# JewTube Installer mit persistentem Fenster
+# JewTube Installer mit robuster Python-Erkennung
 # Ausführung mit: irm https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer | iex
+
+function Get-ActualPython {
+    # Prüft alle möglichen Python-Pfade
+    $pythonPaths = @(
+        "$env:LocalAppData\Programs\Python\Python311\python.exe",
+        "$env:LocalAppData\Programs\Python\Python310\python.exe",
+        "$env:LocalAppData\Programs\Python\Python39\python.exe",
+        "$env:AppData\Python\Python311\python.exe",
+        "C:\Program Files\Python311\python.exe",
+        "C:\Program Files\Python310\python.exe",
+        "C:\Program Files\Python39\python.exe"
+    )
+    
+    foreach ($path in $pythonPaths) {
+        if (Test-Path $path) {
+            return $path
+        }
+    }
+    
+    # Fallback: Versucht Python über PATH zu finden
+    try {
+        return (Get-Command python -ErrorAction Stop).Source
+    }
+    catch {
+        return $null
+    }
+}
 
 function Write-Step {
     param($step, $message)
@@ -7,7 +34,7 @@ function Write-Step {
     Write-Host $message -ForegroundColor Cyan
 }
 
-# Admin-Check mit besseren Hinweisen
+# Admin-Check
 if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "`n⚠️ ADMIN-REICHTE ERFORDERLICH" -ForegroundColor Red
     Write-Host "Das Skript wird sich neu starten..." -ForegroundColor Yellow
@@ -23,6 +50,9 @@ Start-Process powershell -Verb RunAs -ArgumentList '-NoExit -NoProfile -Executio
 
 ### HAUPTPROGRAMM ###
 try {
+    # 0. Python-Pfad ermitteln
+    $pythonExe = Get-ActualPython
+    
     # 1. Winget Installation
     Write-Step -step 1 -message "Überprüfe winget Installation"
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
@@ -48,14 +78,18 @@ try {
 
     # 2. Python Installation
     Write-Step -step 2 -message "Überprüfe Python 3.11"
-    if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    if (-not $pythonExe) {
         Write-Host "Python nicht gefunden, installiere..." -ForegroundColor Yellow
         
         try {
             winget install --id Python.Python.3.11 --exact --accept-source-agreements --accept-package-agreements
-            # PATH aktualisieren
-            $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
-            Write-Host "✅ Python erfolgreich installiert" -ForegroundColor Green
+            $pythonExe = Get-ActualPython
+            
+            if (-not $pythonExe) {
+                throw "Python installiert, aber nicht gefunden"
+            }
+            
+            Write-Host "✅ Python erfolgreich installiert: $pythonExe" -ForegroundColor Green
         }
         catch {
             Write-Host "❌ Fehler: $_" -ForegroundColor Red
@@ -63,7 +97,8 @@ try {
         }
     }
     else {
-        Write-Host "Python bereits installiert: $(python --version 2>&1)" -ForegroundColor Green
+        Write-Host "Python gefunden: $pythonExe" -ForegroundColor Green
+        Write-Host "Version: $(& `"$pythonExe`" --version 2>&1)" -ForegroundColor Green
     }
 
     # 3. Paketinstallation
@@ -78,10 +113,10 @@ try {
         Write-Host "`n🔄 Installiere $($pkg.Name)..." -ForegroundColor Blue
         try {
             # Installiere Paket
-            python -m pip install --upgrade $pkg.Name --disable-pip-version-check
+            & `"$pythonExe`" -m pip install --upgrade $pkg.Name --disable-pip-version-check
             
             # Verifiziere Installation
-            $result = python -c $pkg.Test 2>&1
+            $result = & `"$pythonExe`" -c $pkg.Test 2>&1
             Write-Host "✅ $($pkg.Name) installiert: $result" -ForegroundColor Green
         }
         catch {
@@ -95,13 +130,13 @@ try {
     
     # Systeminformationen
     Write-Host "`nSysteminformationen:" -ForegroundColor Cyan
-    Write-Host "Python: $(python --version 2>&1)" -ForegroundColor Gray
-    Write-Host "yt-dlp: $(python -c 'import yt_dlp; print(yt_dlp.__version__)' 2>&1)" -ForegroundColor Gray
-    Write-Host "ytmusicapi: $(python -c 'import ytmusicapi; print(ytmusicapi.__version__)' 2>&1)" -ForegroundColor Gray
+    Write-Host "Python: $(& `"$pythonExe`" --version 2>&1)" -ForegroundColor Gray
+    Write-Host "yt-dlp: $(& `"$pythonExe`" -c 'import yt_dlp; print(yt_dlp.__version__)' 2>&1)" -ForegroundColor Gray
+    Write-Host "ytmusicapi: $(& `"$pythonExe`" -c 'import ytmusicapi; print(ytmusicapi.__version__)' 2>&1)" -ForegroundColor Gray
     
     Write-Host "`nVerfügbare Kommandos:" -ForegroundColor Cyan
-    Write-Host "• python -m yt_dlp [URL]" -ForegroundColor White
-    Write-Host "• python -m ytmusicapi" -ForegroundColor White
+    Write-Host "• `"$pythonExe`" -m yt_dlp [URL]" -ForegroundColor White
+    Write-Host "• `"$pythonExe`" -m ytmusicapi" -ForegroundColor White
 }
 catch {
     Write-Host "`n❌❌❌ KRITISCHER FEHLER ❌❌❌" -ForegroundColor Red
