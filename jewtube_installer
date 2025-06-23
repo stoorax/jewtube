@@ -42,7 +42,7 @@ try {
         Write-Host "Installiere $pkg..."
         & $pythonExe -m pip install --upgrade $pkg --disable-pip-version-check
     }
-
+}
     # 3. Versionsprüfung
     Write-Host "`n=== Versionsprüfung ==="
     
