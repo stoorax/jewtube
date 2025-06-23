@@ -1,5 +1,14 @@
 # jewtube_installer.ps1
 
+# Self-elevation to Administrator
+if (-not ([Security.Principal.WindowsPrincipal] `
+    [Security.Principal.WindowsIdentity]::GetCurrent() `
+    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "Restarting with Administrator rights..." -ForegroundColor Yellow
+    Start-Process -FilePath pwsh -ArgumentList "-NoProfile","-ExecutionPolicy Bypass","-File `"$PSCommandPath`"" -Verb RunAs
+    exit
+}
+
 Clear-Host
 Write-Host "===============================" -ForegroundColor Cyan
 Write-Host "  JEWTUBE ENVIRONMENT INSTALLER " -ForegroundColor Cyan
@@ -19,7 +28,7 @@ function Write-Info ($m)    { Write-Host $m -ForegroundColor White }
 function Write-Success ($m) { Write-Host "SUCCESS: $m" -ForegroundColor Green }
 function Write-Warn ($m)    { Write-Host "WARNING: $m" -ForegroundColor Red }
 
-# 0) Determine Python executable
+# Determine Python launcher
 if (Get-Command py -ErrorAction SilentlyContinue) {
     $pythonExe = "py"
 } else {
@@ -40,16 +49,16 @@ Wait-User
 # 2) Check/install Python
 Write-Info "2) Checking for Python..."
 try {
-    $ver = & $pythonExe --version 2>&1
+    $ver = & $pythonExe "--version" 2>&1
     Write-Success "Python found: $ver"
 } catch {
     Write-Warn "Python not found! Installing via winget..."
     Wait-User
     winget install --id Python.Python.3 --silent --accept-source-agreements --accept-package-agreements
     Write-Info "Waiting for Python install to finish..."
-    Start-Sleep -Seconds 10
+    Start-Sleep -Seconds 15
     try {
-        $ver = & $pythonExe --version 2>&1
+        $ver = & $pythonExe "--version" 2>&1
         Write-Success "Python installed: $ver"
     } catch {
         Write-Warn "Failed to install Python."
@@ -58,11 +67,11 @@ try {
 }
 Wait-User
 
-# 3) Add user Scripts folder to PATH (where pip puts executables)
-$userBase = & $pythonExe -m site --user-base
+# 3) Add user Scripts folder to PATH
+$userBase    = & $pythonExe -m site --user-base
 $userScripts = Join-Path $userBase 'Scripts'
-$env:Path = "$env:Path;$userScripts"
-Write-Info "Added user Scripts path to PATH: $userScripts"
+$env:Path    = "$env:Path;$userScripts"
+Write-Info "Added user Scripts to PATH: $userScripts"
 Wait-User
 
 # 4) Check/install pip
@@ -106,11 +115,18 @@ foreach ($m in @("ytmusicapi","browser_cookie3")) {
     Wait-User
 }
 
-try {
-    $v = & yt-dlp --version 2>&1
-    Write-Success "yt-dlp OK: Version $v"
-} catch {
-    Write-Warn "yt-dlp FAILED"
+# Explicitly call yt-dlp.exe from user Scripts folder
+$ytDlpExe = Join-Path $userScripts 'yt-dlp.exe'
+if (Test-Path $ytDlpExe) {
+    try {
+        $v = & $ytDlpExe --version 2>&1
+        Write-Success "yt-dlp OK: Version $v"
+    } catch {
+        Write-Warn "yt-dlp FAILED"
+        $errors++
+    }
+} else {
+    Write-Warn "yt-dlp.exe not found at $userScripts"
     $errors++
 }
 Wait-User
