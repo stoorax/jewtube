@@ -1,109 +1,65 @@
-# JewTube Environment Installer (Stable Version)
-# Isolierte Installation mit verbessertem Error-Handling
+# JewTube Environment Installer (Fixed Version)
+# Behebt das yt-dlp Modul-Problem
 
-$ErrorActionPreference = "Stop"
+$INSTALL_DIR = "jewtube_env"
+$PYTHON_VERSION = "3.11.9"
+$PYTHON_URL = "https://www.python.org/ftp/python/$PYTHON_VERSION/python-$PYTHON_VERSION-embed-amd64.zip"
+$PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
 
-# 1. Installationsverzeichnis vorbereiten
-$INSTALL_DIR = "$PWD\jewtube_env"
-Write-Host "`n=== JewTube Environment Installer ===" -ForegroundColor Cyan
-Write-Host "Installationsziel: $INSTALL_DIR" -ForegroundColor Yellow
-
+# 1. Verzeichnis vorbereiten
+Write-Host "`n=== JewTube Installation ===" -ForegroundColor Cyan
 if (Test-Path $INSTALL_DIR) {
-    Write-Host "Entferne bestehende Installation..." -ForegroundColor Yellow
-    Remove-Item $INSTALL_DIR -Recurse -Force -ErrorAction Stop
+    Remove-Item $INSTALL_DIR -Recurse -Force
 }
-
-New-Item -ItemType Directory -Path $INSTALL_DIR -Force | Out-Null
-Push-Location $INSTALL_DIR
+New-Item -ItemType Directory -Path $INSTALL_DIR | Out-Null
+Set-Location $INSTALL_DIR
 
 try {
-    # 2. Portable Python installieren
-    $PYTHON_VERSION = "3.11.9"
-    $PYTHON_URL = "https://www.python.org/ftp/python/$PYTHON_VERSION/python-$PYTHON_VERSION-embed-amd64.zip"
-    $pythonZip = "python_embedded.zip"
+    # 2. Python herunterladen
+    Write-Host "Lade Python $PYTHON_VERSION..." -ForegroundColor Yellow
+    $pythonZip = "python.zip"
+    Invoke-WebRequest -Uri $PYTHON_URL -OutFile $pythonZip -UseBasicParsing
+    Expand-Archive -Path $pythonZip -DestinationPath .
+    Remove-Item $pythonZip -Force
 
-    Write-Host "Lade Python $PYTHON_VERSION herunter..." -ForegroundColor Cyan
-    Invoke-WebRequest -Uri $PYTHON_URL -OutFile $pythonZip -UseBasicParsing -ErrorAction Stop
-
-    Write-Host "Entpacke Python..." -ForegroundColor Cyan
-    Expand-Archive -Path $pythonZip -DestinationPath . -ErrorAction Stop
-    Remove-Item $pythonZip -Force -ErrorAction SilentlyContinue
-
-    # 3. Python Umgebung konfigurieren
-    Write-Host "Konfiguriere Python..." -ForegroundColor Cyan
-    Set-Content -Path "python._pth" -Value @"
+    # 3. WICHTIG: python._pth Datei anpassen
+    Write-Host "Konfiguriere Python..." -ForegroundColor Yellow
+    Set-Content -Path "python._pth" @"
 python${PYTHON_VERSION}.zip
 .
 import site
-"@ -ErrorAction Stop
+Lib\site-packages
+"@
 
     # 4. Pip installieren
-    $PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
-    Write-Host "Installiere pip..." -ForegroundColor Cyan
-    Invoke-WebRequest -Uri $PIP_URL -OutFile "get-pip.py" -UseBasicParsing -ErrorAction Stop
+    Write-Host "Installiere pip..." -ForegroundColor Yellow
+    Invoke-WebRequest -Uri $PIP_URL -OutFile "get-pip.py" -UseBasicParsing
     .\python.exe get-pip.py --no-warn-script-location
-    if ($LASTEXITCODE -ne 0) { throw "Pip-Installation fehlgeschlagen" }
-    Remove-Item get-pip.py -Force -ErrorAction SilentlyContinue
+    Remove-Item get-pip.py -Force
 
-    # 5. Pakete installieren
-    $PACKAGES = @("yt-dlp", "ytmusicapi", "browser_cookie3")
-    Write-Host "Installiere Pakete: $($PACKAGES -join ', ')" -ForegroundColor Cyan
-    
-    $installedPackages = @()
-    foreach ($pkg in $PACKAGES) {
-        .\python.exe -m pip install $pkg --no-warn-script-location
-        if ($LASTEXITCODE -eq 0) {
-            $installedPackages += $pkg
-        } else {
-            Write-Host "Warnung: Installation von $pkg fehlgeschlagen" -ForegroundColor Yellow
-        }
-    }
+    # 5. Pakete installieren (mit explizitem Zielverzeichnis)
+    Write-Host "Installiere Pakete..." -ForegroundColor Yellow
+    New-Item -ItemType Directory -Path "Lib\site-packages" -Force | Out-Null
+    .\python.exe -m pip install yt-dlp ytmusicapi browser_cookie3 --target="Lib\site-packages" --no-warn-script-location
 
     # 6. Startskript erstellen
-    Write-Host "Erstelle Startskript..." -ForegroundColor Cyan
-    Set-Content -Path "jewtube.bat" -Value @"
+    Write-Host "Erstelle Startskript..." -ForegroundColor Yellow
+    Set-Content -Path "jewtube.bat" @"
 @echo off
 set PYTHONPATH=%~dp0
 %~dp0python.exe -m yt_dlp %*
-"@ -ErrorAction SilentlyContinue
+"@
 
-    # 7. Erfolgsmeldung
+    # Erfolgsmeldung
     Write-Host "`n=== Installation erfolgreich! ===" -ForegroundColor Green
-    Write-Host "Installierte Pakete:" -ForegroundColor Green
-    .\python.exe -m pip list --disable-pip-version-check | Select-String -Pattern ($PACKAGES -join "|")
-
-    Write-Host "`nVerwendung:" -ForegroundColor Yellow
-    Write-Host "1. Mit Batch-Skript: .\jewtube_env\jewtube.bat [OPTIONS] URL"
-    Write-Host "2. Direkt mit Python: .\jewtube_env\python.exe -m yt_dlp [OPTIONS] URL"
-    Write-Host "`nDeinstallation: Löschen Sie einfach den Ordner '$INSTALL_DIR'" -ForegroundColor Cyan
-
-    # 8. Sicherheitsabfrage
-    $choice = Read-Host "`nInstallation bestätigen? (J = Beenden, N = Verzeichnis löschen)"
-    if ($choice -eq "N" -or $choice -eq "n") {
-        throw "Benutzerabbruch"
-    }
+    Write-Host "Testen Sie mit: .\jewtube.bat --version" -ForegroundColor Cyan
 }
 catch {
     Write-Host "`nFEHLER: $_" -ForegroundColor Red
-    Write-Host "Führe Cleanup durch..." -ForegroundColor Yellow
-    
-    try {
-        Pop-Location
-        if (Test-Path $INSTALL_DIR) {
-            Remove-Item $INSTALL_DIR -Recurse -Force -ErrorAction SilentlyContinue
-            Write-Host "Installationsverzeichnis entfernt." -ForegroundColor Green
-        }
-    }
-    catch {
-        Write-Host "Cleanup fehlgeschlagen: $_" -ForegroundColor Red
-    }
-    
+    Write-Host "Entferne Installationsverzeichnis..." -ForegroundColor Yellow
+    Set-Location ..
+    Remove-Item $INSTALL_DIR -Recurse -Force -ErrorAction SilentlyContinue
     exit 1
 }
-finally {
-    if ((Get-Location).Path -eq $INSTALL_DIR) {
-        Pop-Location
-    }
-}
 
-Write-Host "`nInstallation abgeschlossen! Viel Spaß mit JewTube." -ForegroundColor Green
+Write-Host "`nDeinstallation: Löschen Sie einfach den '$INSTALL_DIR' Ordner" -ForegroundColor Cyan
