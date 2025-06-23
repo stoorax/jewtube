@@ -67,6 +67,7 @@ foreach ($pkg in $packages) {
     }
     catch {
         Write-Log "Fehler bei pkg: $_"
+        exit 1
     }
 }
 
