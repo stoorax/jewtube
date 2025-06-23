@@ -1,20 +1,9 @@
-# JewTube Installer (Stable & Getestet)
+# JewTube Installer (Fehlerfrei & Getestet)
 # Ausführung mit: iwr https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer | iex
 
 # Logfile erstellen
 $logFile = "$env:TEMP\JewTube_Install_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 Start-Transcript -Path $logFile -Append | Out-Null
-
-function Get-RealPython {
-    $paths = @(
-        "$env:LocalAppData\Programs\Python\Python311\python.exe",
-        "C:\Program Files\Python311\python.exe"
-    )
-    foreach ($path in $paths) {
-        if (Test-Path $path) { return $path }
-    }
-    return $null
-}
 
 # Admin-Check
 $adminCheck = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
@@ -29,11 +18,37 @@ Write-Host "=== JewTube Installation ==="
 Write-Host "Logfile: $logFile`n"
 
 try {
-    # 1. Python finden
-    $pythonExe = Get-RealPython
-    if (-not $pythonExe) {
-        throw "Python nicht gefunden!"
+    # 1. Python finden oder installieren
+    $pythonExe = $null
+    $pythonPaths = @(
+        "$env:LocalAppData\Programs\Python\Python311\python.exe",
+        "C:\Program Files\Python311\python.exe"
+    )
+    
+    foreach ($path in $pythonPaths) {
+        if (Test-Path $path) { 
+            $pythonExe = $path
+            break
+        }
     }
+    
+    if (-not $pythonExe) {
+        Write-Host "Python nicht gefunden, installiere mit winget..."
+        winget install --id Python.Python.3.11 --exact --accept-source-agreements --accept-package-agreements --silent
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+        
+        foreach ($path in $pythonPaths) {
+            if (Test-Path $path) { 
+                $pythonExe = $path
+                break
+            }
+        }
+        
+        if (-not $pythonExe) {
+            throw "Python-Installation fehlgeschlagen oder Pfad nicht gefunden"
+        }
+    }
+    
     Write-Host "Python gefunden: $pythonExe"
 
     # 2. Pakete installieren
@@ -42,40 +57,35 @@ try {
         Write-Host "Installiere $pkg..."
         & $pythonExe -m pip install --upgrade $pkg --disable-pip-version-check
     }
-}
+
     # 3. Versionsprüfung
     Write-Host "`n=== Versionsprüfung ==="
     
-    # yt-dlp Version über direkten CLI-Befehl
+    # yt-dlp Version
     $ytdlpVersion = yt-dlp --version 2>&1
     Write-Host "yt-dlp Version: $ytdlpVersion"
     
-    # ytmusicapi Version über Python
+    # ytmusicapi Version
     $ytmusicVersion = & $pythonExe -c "import ytmusicapi; print(ytmusicapi.__version__)" 2>&1
     Write-Host "ytmusicapi Version: $ytmusicVersion"
 
-    # 4. Funktionstests
-    Write-Host "`n=== Funktionstests ==="
-    
-    # Test 1: YoutubeDL Import
-    & $pythonExe -c "from yt_dlp import YoutubeDL; print('YoutubeDL Import erfolgreich!')" 2>&1
-    
-    # Test 2: yt-dlp CLI-Simulation
-    Write-Host "Führe Download-Simulationstest aus..."
+    # 4. Funktionstest
+    Write-Host "`n=== Funktionstest ==="
     yt-dlp --simulate --format best "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "Download-Simulation erfolgreich!" -ForegroundColor Green
+        Write-Host "Funktionstest erfolgreich!" -ForegroundColor Green
+        Write-Host "`n=== INSTALLATION ERFOLGREICH ===" -ForegroundColor Green
     }
     else {
-        Write-Host "Download-Simulation fehlgeschlagen" -ForegroundColor Red
+        Write-Host "Funktionstest fehlgeschlagen" -ForegroundColor Red
+        Write-Host "`n=== INSTALLATION MIT WARNUNGEN ===" -ForegroundColor Yellow
     }
-
-    Write-Host "`n=== ERFOLG ===" -ForegroundColor Green
-    Write-Host "Alle Komponenten erfolgreich installiert und getestet!"
 }
 catch {
     Write-Host "`n=== FEHLER ===" -ForegroundColor Red
     Write-Host $_
+    Write-Host "`n=== INSTALLATION FEHLGESCHLAGEN ===" -ForegroundColor Red
 }
 finally {
     # Logfile anzeigen
