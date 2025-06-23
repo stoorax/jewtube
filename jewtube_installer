@@ -1,95 +1,60 @@
-# JewTube ULTIMATE Installer
-# Behebt alle Pip- und Modul-Probleme
+# JewTube One-Click Installer (komprimierte URL-Version)
+# Ausführung mit: irm https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer | iex
 
-$ErrorActionPreference = "Stop"
-
-# 1. Setup
-$INSTALL_DIR = "$PWD\jewtube_env"
-$PYTHON_VERSION = "3.11.9"
-$PYTHON_URL = "https://www.python.org/ftp/python/$PYTHON_VERSION/python-$PYTHON_VERSION-embed-amd64.zip"
-$PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
-
-Write-Host "`n=== JewTube ULTIMATE Installation ===" -ForegroundColor Cyan
-Write-Host "Zielverzeichnis: $INSTALL_DIR" -ForegroundColor Yellow
-
-# 2. Clean install
-if (Test-Path $INSTALL_DIR) {
-    Write-Host "Entferne alte Installation..." -ForegroundColor Yellow
-    Remove-Item $INSTALL_DIR -Recurse -Force
+# Admin-Check und Auto-Restart
+if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    $scriptUrl = "https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer"
+    Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm '$scriptUrl' | iex`""
+    exit
 }
 
-New-Item -ItemType Directory -Path $INSTALL_DIR | Out-Null
-Push-Location $INSTALL_DIR
+### AB HIER LÄUFT ALS ADMIN ###
 
+# 1. Winget sicher installieren
+if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+    Write-Host "🔧 Winget wird installiert..." -ForegroundColor Cyan
+    try {
+        $progressPreference = 'silentlyContinue'
+        irm https://aka.ms/getwinget -OutFile winget.msixbundle -UseBasicParsing
+        Add-AppxPackage -Path winget.msixbundle
+        Remove-Item winget.msixbundle -ErrorAction SilentlyContinue
+    }
+    catch {
+        Write-Host "❌ Winget-Installation fehlgeschlagen" -ForegroundColor Red
+        exit 1
+    }
+}
+
+# 2. Python 3.11 installieren
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    Write-Host "🐍 Python 3.11 wird installiert..." -ForegroundColor Cyan
+    winget install --id Python.Python.3.11 --exact --accept-source-agreements --accept-package-agreements
+    # PATH aktualisieren
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+}
+
+# 3. Pakete installieren
+$packages = @("yt-dlp", "ytmusicapi", "browser-cookie3")
+Write-Host "📦 Installiere Pakete..." -ForegroundColor Cyan
+
+python -m ensurepip --upgrade
+foreach ($pkg in $packages) {
+    python -m pip install --upgrade $pkg
+    if ($LASTEXITCODE -ne 0) { Write-Host "⚠️ Problem mit $pkg" -ForegroundColor Yellow }
+}
+
+# 4. Verifikation
+Write-Host "`n🔍 Überprüfe Installation:" -ForegroundColor Green
 try {
-    # 3. Download and extract Python
-    Write-Host "Lade Python herunter..." -ForegroundColor Cyan
-    Invoke-WebRequest -Uri $PYTHON_URL -OutFile "python.zip" -UseBasicParsing
-    Expand-Archive -Path "python.zip" -DestinationPath .
-    Remove-Item "python.zip" -Force
-
-    # 4. Fix critical Python configuration
-    Write-Host "Konfiguriere Python..." -ForegroundColor Cyan
-    New-Item -ItemType Directory -Path "Lib\site-packages" -Force | Out-Null
-    
-    # Create proper ._pth file
-    Set-Content -Path "python._pth" @"
-python${PYTHON_VERSION}.zip
-.
-Lib\site-packages
-import site
-"@
-
-    # 5. PROPER pip installation
-    Write-Host "Installiere pip KORREKT..." -ForegroundColor Cyan
-    Invoke-WebRequest -Uri $PIP_URL -OutFile "get-pip.py" -UseBasicParsing
-    
-    # First install pip to the local environment
-    $env:PYTHONPATH = "$PWD\Lib\site-packages"
-    .\python.exe get-pip.py --no-warn-script-location --target="Lib\site-packages"
-    
-    # Verify pip is working
-    if (-not (Test-Path "Lib\site-packages\pip")) {
-        throw "Pip-Installation fehlgeschlagen"
-    }
-    Remove-Item "get-pip.py" -Force
-
-    # 6. Install packages with PROPER pip
-    Write-Host "Installiere Pakete..." -ForegroundColor Cyan
-    .\python.exe -m pip install --target="Lib\site-packages" --no-warn-script-location yt-dlp ytmusicapi browser_cookie3
-    
-    # 7. Verify installation
-    Write-Host "Teste Installation..." -ForegroundColor Cyan
-    $test = .\python.exe -c "import yt_dlp; print(yt_dlp.__version__)" 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "Test fehlgeschlagen: $test"
-    }
-
-    # 8. Create launcher
-    Write-Host "Erstelle Startskript..." -ForegroundColor Cyan
-    Set-Content -Path "jewtube.bat" @"
-@echo off
-set PYTHONPATH=%~dp0Lib\site-packages
-%~dp0python.exe -m yt_dlp %*
-"@
-
-    # Success message
-    Write-Host "`n=== ERFOLGREICH INSTALLIERT ===" -ForegroundColor Green
-    Write-Host "Getestete Version: $test" -ForegroundColor Green
-    Write-Host "`nNUTZUNG:" -ForegroundColor Yellow
-    Write-Host "1. .\jewtube_env\jewtube.bat [OPTIONS] URL"
-    Write-Host "2. .\jewtube_env\python.exe -m yt_dlp [OPTIONS] URL"
-    Write-Host "`nDEINSTALLATION: Einfach den Ordner '$INSTALL_DIR' löschen" -ForegroundColor Cyan
+    python -c "import yt_dlp; print(f'✅ yt-dlp {yt_dlp.__version__}')"
+    python -c "import ytmusicapi; print(f'✅ ytmusicapi {ytmusicapi.__version__}')"
+    python -c "import browser_cookie3; print('✅ browser-cookie3')"
 }
 catch {
-    Write-Host "`nFEHLER: $_" -ForegroundColor Red
-    Write-Host "Führe Cleanup durch..." -ForegroundColor Yellow
-    Pop-Location
-    Remove-Item $INSTALL_DIR -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "❌ Verifikation fehlgeschlagen: $_" -ForegroundColor Red
     exit 1
 }
-finally {
-    Pop-Location
-}
 
-Write-Host "`nFertig! Das Skript kann jetzt verwendet werden." -ForegroundColor Green
+Write-Host "`n🎉 Installation erfolgreich!" -ForegroundColor Green
+Write-Host "Verwendung: python -m yt_dlp [URL]" -ForegroundColor Cyan
+Write-Host "Deinstallieren: pip uninstall yt-dlp ytmusicapi browser-cookie3" -ForegroundColor DarkGray
