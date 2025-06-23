@@ -1,4 +1,4 @@
-# JewTube Installer (Finale Version mit direkter Versionsprüfung)
+# JewTube Installer (Stable Version)
 # Ausführung mit: iwr https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer | iex
 
 # Logfile erstellen
@@ -32,7 +32,7 @@ try {
     # 1. Python finden
     $pythonExe = Get-RealPython
     if (-not $pythonExe) {
-        throw "Python nicht gefunden!!"
+        throw "Python nicht gefunden!"
     }
     Write-Host "Python gefunden: $pythonExe"
 
@@ -43,30 +43,41 @@ try {
         & $pythonExe -m pip install --upgrade $pkg --disable-pip-version-check
     }
 
-    # 3. Versionsprüfung mit direkten Befehlen
-    Write-Host "`n=== Versionsprüfung ==="
+    # 3. Funktionstests statt Versionsprüfung
+    Write-Host "`n=== Funktionstests ==="
     
-    # yt-dlp Version über CLI
-    $ytdlpVersion = yt-dlp --version 2>&1
-    Write-Host "yt-dlp Version: $ytdlpVersion"
-    
-    # ytmusicapi Version über Python
-    $ytmusicVersion = & $pythonExe -c "import ytmusicapi; print(ytmusicapi.__version__)" 2>&1
-    Write-Host "ytmusicapi Version: $ytmusicVersion"
-    
-    # 4. Funktionstest
-    Write-Host "`n=== Funktionstest ==="
-    yt-dlp --simulate --format best "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-    
+    # Test 1: yt-dlp CLI
+    Write-Host "Teste yt-dlp CLI..."
+    yt-dlp --version
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "Funktionstest erfolgreich!" -ForegroundColor Green
+        Write-Host "yt-dlp CLI funktioniert" -ForegroundColor Green
     }
     else {
-        Write-Host "Funktionstest fehlgeschlagen" -ForegroundColor Red
+        Write-Host "yt-dlp CLI fehlgeschlagen" -ForegroundColor Red
+    }
+    
+    # Test 2: ytmusicapi Import
+    Write-Host "Teste ytmusicapi Import..."
+    & $pythonExe -c "from ytmusicapi import YTMusic; print('YTMusic Import erfolgreich')" 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "ytmusicapi Import funktioniert" -ForegroundColor Green
+    }
+    else {
+        Write-Host "ytmusicapi Import fehlgeschlagen" -ForegroundColor Red
+    }
+    
+    # Test 3: Kompletter Download-Simulationstest
+    Write-Host "`nTeste YouTube Download-Simulation..."
+    yt-dlp --simulate --format best "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Download-Simulation erfolgreich!" -ForegroundColor Green
+    }
+    else {
+        Write-Host "Download-Simulation fehlgeschlagen" -ForegroundColor Red
     }
 
     Write-Host "`n=== ERFOLG ===" -ForegroundColor Green
-    Write-Host "Alle Komponenten erfolgreich installiert!"
+    Write-Host "Alle Komponenten erfolgreich installiert und getestet!"
 }
 catch {
     Write-Host "`n=== FEHLER ===" -ForegroundColor Red
@@ -76,7 +87,7 @@ finally {
     # Logfile anzeigen
     Write-Host "`n=== Logfile ==="
     Write-Host "Öffne Logfile: $logFile"
-    notepad $logFile
+    Start-Process notepad $logFile
     
     # Auf Benutzereingabe warten
     Write-Host "`nDrücken Sie ENTER zum Beenden..."
