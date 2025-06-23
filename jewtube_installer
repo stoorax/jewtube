@@ -66,7 +66,7 @@ foreach ($pkg in $packages) {
         python -m pip install --upgrade $pkg --disable-pip-version-check
     }
     catch {
-        Write-Log "Fehler bei $pkg: $_"
+        Write-Log "Fehler bei pkg: $_"
     }
 }
 
