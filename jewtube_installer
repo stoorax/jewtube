@@ -1,65 +1,101 @@
 <#
-JewTube Installer (inkl. yewtube)
-Autor: Automatisch generiert basierend auf Nutzeranfrage
+.JewTube Installer (Ehrliche Version)
 #>
 
-# Logfile erstellen
-$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$logFile = "C:\Users\$env:USERNAME\AppData\Local\Temp\JewTube_Install_$timestamp.log"
-Start-Transcript -Path $logFile -Append
+# 1. Admin-Check
+if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "Admin-Rechte benötigt - starte neu als Admin..." -ForegroundColor Yellow
+    Start-Process powershell -Verb RunAs -ArgumentList "-NoExit -Command `"iwr https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer | iex`""
+    exit
+}
 
-Write-Host "**********************"
-Write-Host "=== JewTube Installation ==="
-Write-Host "Logfile: $logFile`n"
+# 2. Logfile Setup
+$logPath = "$env:TEMP\JewTube_Install.log"
+"=== Installationslog $(Get-Date) ===" | Out-File $logPath -Append
 
-# 1. Python-Prüfung
-$pythonPath = (Get-Command python -ErrorAction SilentlyContinue).Source
-if (-not $pythonPath) {
-    Write-Error "Python nicht gefunden! Bitte zuerst installieren: https://www.python.org/downloads/"
+function Write-Log {
+    param($message)
+    $timestamp = Get-Date -Format "HH:mm:ss"
+    "[$timestamp] $message" | Out-File $logPath -Append
+    Write-Host $message
+}
+
+# 3. Winget Check
+try {
+    Write-Log "Prüfe winget..."
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        Write-Log "Installiere winget..."
+        $progressPreference = 'silentlyContinue'
+        Invoke-WebRequest -Uri https://aka.ms/getwinget -OutFile winget.msixbundle -UseBasicParsing
+        Add-AppxPackage -Path winget.msixbundle
+        Remove-Item winget.msixbundle
+    }
+}
+catch {
+    Write-Log "Fehler bei winget: $_"
     exit 1
 }
-Write-Host "Python gefunden: $pythonPath`n"
 
-# 2. Pip-Pakete installieren (inkl. yewtube)
-$packages = @("yt-dlp", "ytmusicapi", "browser-cookie3", "yewtube")  # yewtube hinzugefügt
+# 4. Python Installation
+try {
+    Write-Log "Prüfe Python..."
+    $pythonPath = where.exe python 2>$null
+    if (-not $pythonPath) {
+        Write-Log "Installiere Python 3.11..."
+        winget install --id Python.Python.3.11 --exact --accept-source-agreements --accept-package-agreements --silent
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+        $pythonPath = where.exe python 2>$null
+    }
+    
+    if (-not $pythonPath) {
+        throw "Python konnte nicht gefunden werden"
+    }
+    
+    Write-Log "Python gefunden: $pythonPath"
+}
+catch {
+    Write-Log "Fehler bei Python: $_"
+    exit 1
+}
 
+# 5. Paketinstallation
+$packages = @("yt-dlp", "ytmusicapi", "browser-cookie3")
 foreach ($pkg in $packages) {
-    Write-Host "Installiere $pkg..."
-    pip install --upgrade $pkg 2>&1 | Out-Host
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Fehler bei der Installation von $pkg!"
+    try {
+        Write-Log "Installiere $pkg..."
+        python -m pip install --upgrade $pkg --disable-pip-version-check
+    }
+    catch {
+        Write-Log "Fehler bei $pkg: $_"
     }
 }
 
-# 3. Versionsprüfung
-Write-Host "`n=== Versionsprüfung ==="
-pip show yt-dlp ytmusicapi yewtube | Select-String "Version"  # yewtube hinzugefügt
-
-# 4. Funktionstests
-Write-Host "`n=== Funktionstest ==="
-
-# Test yt-dlp
-Write-Host "Teste yt-dlp (Rickroll)..."
-yt-dlp -f b "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --no-download
-
-# Test yewtube
-Write-Host "`nTeste yewtube..."
-yewtube --version
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "yewtube funktioniert! Starte mit: yewtube"
-} else {
-    Write-Warning "yewtube-Test fehlgeschlagen!"
+# 6. Verifikation
+try {
+    Write-Log "Prüfe Installation..."
+    
+    # yt-dlp Version
+    $ytdlpVer = yt-dlp --version 2>&1
+    Write-Log "yt-dlp Version: $ytdlpVer"
+    
+    # ytmusicapi Version
+    $ytmusicVer = python -c "import ytmusicapi; print(ytmusicapi.__version__)" 2>&1
+    Write-Log "ytmusicapi Version: $ytmusicVer"
+    
+    # Funktionstest
+    yt-dlp --simulate --format best "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    if ($LASTEXITCODE -eq 0) {
+        Write-Log "Test erfolgreich!"
+    }
+    else {
+        Write-Log "Test fehlgeschlagen!"
+    }
+}
+catch {
+    Write-Log "Verifikationsfehler: $_"
 }
 
-# 5. Zusammenfassung
-Write-Host "`n=== INSTALLATION ERFOLGREICH ==="
-Write-Host "Installierte Tools:"
-Write-Host "- yt-dlp (YouTube-Downloads)"
-Write-Host "- ytmusicapi (YouTube Music API)"
-Write-Host "- yewtube (Terminal-YouTube-Client)`n"
-
-Write-Host "Logfile: $logFile"
-Stop-Transcript
-
-# Fertig
-Read-Host "Drücken Sie ENTER zum Beenden..."
+# 7. Abschluss
+Write-Log "=== Installation abgeschlossen ==="
+Write-Log "Logfile: $logPath"
+notepad $logPath
