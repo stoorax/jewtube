@@ -1,38 +1,65 @@
-# PowerShell-Skript zur Installation von JewTube + yewtube
-echo "=== JewTube Installation ==="
-$logFile = "C:\Users\$env:USERNAME\AppData\Local\Temp\JewTube_Install_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+<#
+JewTube Installer (inkl. yewtube)
+Autor: Automatisch generiert basierend auf Nutzeranfrage
+#>
+
+# Logfile erstellen
+$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$logFile = "C:\Users\$env:USERNAME\AppData\Local\Temp\JewTube_Install_$timestamp.log"
 Start-Transcript -Path $logFile -Append
+
+Write-Host "**********************"
+Write-Host "=== JewTube Installation ==="
+Write-Host "Logfile: $logFile`n"
 
 # 1. Python-Prüfung
 $pythonPath = (Get-Command python -ErrorAction SilentlyContinue).Source
 if (-not $pythonPath) {
-    Write-Error "Python nicht gefunden! Bitte installieren: https://www.python.org/downloads/"
+    Write-Error "Python nicht gefunden! Bitte zuerst installieren: https://www.python.org/downloads/"
     exit 1
 }
-echo "Python gefunden: $pythonPath"
+Write-Host "Python gefunden: $pythonPath`n"
 
-# 2. Pip-Pakete installieren
+# 2. Pip-Pakete installieren (inkl. yewtube)
 $packages = @("yt-dlp", "ytmusicapi", "browser-cookie3", "yewtube")  # yewtube hinzugefügt
+
 foreach ($pkg in $packages) {
-    echo "Installiere $pkg..."
-    pip install --upgrade $pkg
+    Write-Host "Installiere $pkg..."
+    pip install --upgrade $pkg 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Fehler bei der Installation von $pkg!"
+    }
 }
 
 # 3. Versionsprüfung
-echo "`n=== Versionsprüfung ==="
-pip show yt-dlp ytmusicapi yewtube | Select-String "Version"
+Write-Host "`n=== Versionsprüfung ==="
+pip show yt-dlp ytmusicapi yewtube | Select-String "Version"  # yewtube hinzugefügt
 
-# 4. Funktionstest (yt-dlp)
-echo "`n=== Funktionstest ==="
-youtube-dl --version  # yt-dlp alias testen
-yt-dlp -f b "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --no-download  # Test ohne Download
+# 4. Funktionstests
+Write-Host "`n=== Funktionstest ==="
 
-# 5. yewtube-Konfiguration (falls benötigt)
-echo "`n=== yewtube Setup ==="
+# Test yt-dlp
+Write-Host "Teste yt-dlp (Rickroll)..."
+yt-dlp -f b "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --no-download
+
+# Test yewtube
+Write-Host "`nTeste yewtube..."
 yewtube --version
-echo "Tipp: Starte yewtube mit 'yewtube' im Terminal."
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "yewtube funktioniert! Starte mit: yewtube"
+} else {
+    Write-Warning "yewtube-Test fehlgeschlagen!"
+}
 
-echo "`n=== INSTALLATION ERFOLGREICH ==="
+# 5. Zusammenfassung
+Write-Host "`n=== INSTALLATION ERFOLGREICH ==="
+Write-Host "Installierte Tools:"
+Write-Host "- yt-dlp (YouTube-Downloads)"
+Write-Host "- ytmusicapi (YouTube Music API)"
+Write-Host "- yewtube (Terminal-YouTube-Client)`n"
+
+Write-Host "Logfile: $logFile"
 Stop-Transcript
-echo "Logfile: $logFile"
+
+# Fertig
 Read-Host "Drücken Sie ENTER zum Beenden..."
