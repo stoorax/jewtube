@@ -1,7 +1,8 @@
 # JewTube Environment Installer
 # Stellt sicher, dass Python 3.8+, pip, yt-dlp, ytmusicapi und browser_cookie3 installiert sind
+# Mit Rollback-Funktion bei false
 
-# Prüft Administratorrechte (für Python-Installation erforderlich)
+# Prüft Administratorrechte
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 # Funktion zum Installieren von Python
@@ -13,9 +14,13 @@ function Install-Python {
         # Installer herunterladen
         Invoke-WebRequest -Uri $pythonURL -OutFile $installerPath -UseBasicParsing
         
-        # Python im Silent Mode installieren (für alle Benutzer mit Admin-Rechten)
+        # Python installieren
         $installArgs = "/quiet InstallAllUsers=1 PrependPath=1"
-        Start-Process -FilePath $installerPath -ArgumentList $installArgs -Wait
+        $process = Start-Process -FilePath $installerPath -ArgumentList $installArgs -Wait -PassThru
+        
+        if ($process.ExitCode -ne 0) {
+            throw "Python-Installation fehlgeschlagen mit Exit-Code $($process.ExitCode)"
+        }
         
         # PATH-Variable aktualisieren
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
@@ -39,10 +44,53 @@ function Test-PythonVersion {
     }
 }
 
+# Funktion für Rollback
+function Invoke-Rollback {
+    param(
+        [bool]$pythonInstalled,
+        [System.Collections.Generic.List[string]]$installedPackages
+    )
+    
+    Write-Host "`nFühre Rollback durch..." -ForegroundColor Yellow
+    
+    # Deinstalliere Python-Pakete
+    if ($installedPackages.Count -gt 0) {
+        Write-Host "Deinstalliere Pakete: $($installedPackages -join ', ')" -ForegroundColor Yellow
+        foreach ($pkg in $installedPackages) {
+            python -m pip uninstall -y $pkg 2>$null
+        }
+    }
+    
+    # Deinstalliere Python (nur wenn während Skript installiert)
+    if ($pythonInstalled) {
+        Write-Host "Deinstalliere Python..." -ForegroundColor Yellow
+        $uninstallString = (Get-ChildItem "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" | 
+            Where-Object { $_.GetValue("DisplayName") -match "Python" } |
+            Select-Object -First 1).GetValue("UninstallString")
+        
+        if ($uninstallString) {
+            Start-Process -FilePath $uninstallString -ArgumentList "/quiet" -Wait
+            Write-Host "Python erfolgreich deinstalliert" -ForegroundColor Green
+        }
+        else {
+            Write-Host "Python-Deinstaller nicht gefunden" -ForegroundColor Red
+        }
+    }
+    
+    Write-Host "Rollback abgeschlossen!" -ForegroundColor Green
+}
+
 # Hauptinstallation
 try {
+    $rollbackData = @{
+        pythonInstalled = $false
+        installedPackages = [System.Collections.Generic.List[string]]::new()
+    }
+
     # 1. Python prüfen und installieren
+    $pythonWasInstalled = $true
     if (-not (Test-PythonVersion)) {
+        $pythonWasInstalled = $false
         Write-Host "Python 3.8+ wird installiert..." -ForegroundColor Yellow
         
         if (-not $isAdmin) {
@@ -52,25 +100,66 @@ try {
         }
         
         Install-Python
+        $rollbackData.pythonInstalled = $true
         
-        # Nach Installation erneut prüfen
+        # Nach Installation prüfen
         if (-not (Test-PythonVersion)) {
-            Write-Host "Python-Installation fehlgeschlagen!" -ForegroundColor Red
-            exit 1
+            throw "Python-Installation fehlgeschlagen!"
         }
     }
 
     # 2. Pakete mit pip installieren
-    Write-Host "Installiere erforderliche Python-Pakete..." -ForegroundColor Cyan
-    python -m pip install --upgrade pip
-    python -m pip install yt-dlp ytmusicapi browser_cookie3
+    Write-Host "`nInstalliere erforderliche Python-Pakete..." -ForegroundColor Cyan
+    $requiredPackages = @("yt-dlp", "ytmusicapi", "browser_cookie3")
     
+    # Aktuelle Pakete vor Installation prüfen
+    $installedBefore = python -m pip list --format=json | ConvertFrom-Json | 
+        Where-Object { $requiredPackages -contains $_.name } | 
+        Select-Object -ExpandProperty name
+
+    # Pip upgraden
+    python -m pip install --upgrade pip 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Pip-Upgrade fehlgeschlagen"
+    }
+
+    # Pakete installieren
+    python -m pip install $requiredPackages
+    if ($LASTEXITCODE -ne 0) {
+        throw "Paketinstallation fehlgeschlagen"
+    }
+
+    # Neu installierte Pakete identifizieren
+    $newlyInstalled = $requiredPackages | Where-Object { $_ -notin $installedBefore }
+    $rollbackData.installedPackages.AddRange($newlyInstalled)
+
     # 3. Erfolgsmeldung
     Write-Host "`nJewTube-Environment erfolgreich installiert!" -ForegroundColor Green
-    Write-Host "Folgende Pakete sind jetzt verfügbar:" -ForegroundColor Green
-    python -m pip list | Select-String -Pattern "(yt-dlp|ytmusicapi|browser_cookie3)"
+    Write-Host "Installierte Komponenten:" -ForegroundColor Green
+    python --version
+    $requiredPackages | ForEach-Object {
+        $version = (python -m pip show $_ | Select-String "Version: (.*)").Matches.Groups[1].Value
+        Write-Host "- $_ v$version"
+    }
 }
 catch {
     Write-Host "`nFEHLER bei der Installation: $_" -ForegroundColor Red
+    Invoke-Rollback @rollbackData
     exit 1
+}
+
+# 4. Sicherheitsabfrage
+try {
+    $choice = Read-Host "`nSind Sie mit der Installation zufrieden? (true = Beenden, false = Rollback)"
+    
+    if ($choice -eq "false") {
+        Invoke-Rollback @rollbackData
+        Write-Host "Rollback durchgeführt. Originalzustand wiederhergestellt." -ForegroundColor Green
+    }
+    else {
+        Write-Host "Installation bestätigt. Viel Spaß mit JewTube!" -ForegroundColor Green
+    }
+}
+catch {
+    Write-Host "Fehler bei der Benutzerabfrage: $_" -ForegroundColor Red
 }
