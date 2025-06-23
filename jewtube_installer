@@ -1,60 +1,105 @@
-# JewTube One-Click Installer (komprimierte URL-Version)
+# JewTube Installer mit Fortschrittsanzeige
 # Ausführung mit: irm https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer | iex
 
-# Admin-Check und Auto-Restart
+function Show-Progress {
+    param($step, $message)
+    Write-Host "`n[$step/4] $message" -ForegroundColor Cyan
+    Start-Sleep -Milliseconds 300  # Kurze Pause für bessere Lesbarkeit
+}
+
+# Admin-Check mit besserer Rückmeldung
 if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "`n🛑 Admin-Rechte benötigt - Starte neu mit Administratorrechten..." -ForegroundColor Yellow
     $scriptUrl = "https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer"
-    Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm '$scriptUrl' | iex`""
+    
+    try {
+        Start-Process powershell -Verb RunAs -ArgumentList @"
+-NoProfile -ExecutionPolicy Bypass -Command "irm '$scriptUrl' | iex; pause"
+"@
+    }
+    catch {
+        Write-Host "❌ Admin-Rechte verweigert! Bitte PowerShell als Administrator starten." -ForegroundColor Red
+    }
     exit
 }
 
-### AB HIER LÄUFT ALS ADMIN ###
+### Hauptinstallationsroutine ###
+try {
+    # 1. Winget Installation
+    Show-Progress -step 1 -message "Prüfe winget Installation..."
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        Write-Host "ℹ️ Winget nicht gefunden, installiere..." -ForegroundColor Yellow
+        
+        $tempFile = "$env:TEMP\winget.msixbundle"
+        try {
+            Invoke-WebRequest -Uri https://aka.ms/getwinget -OutFile $tempFile -UseBasicParsing
+            Add-AppxPackage -Path $tempFile -ErrorAction Stop
+            Write-Host "✅ Winget erfolgreich installiert" -ForegroundColor Green
+        }
+        catch {
+            Write-Host "❌ Winget Installation fehlgeschlagen: $_" -ForegroundColor Red
+            exit 1
+        }
+        finally {
+            if (Test-Path $tempFile) { Remove-Item $tempFile }
+        }
+    }
 
-# 1. Winget sicher installieren
-if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-    Write-Host "🔧 Winget wird installiert..." -ForegroundColor Cyan
+    # 2. Python Installation
+    Show-Progress -step 2 -message "Prüfe Python 3.11..."
+    if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+        Write-Host "ℹ️ Python nicht gefunden, installiere..." -ForegroundColor Yellow
+        
+        try {
+            winget install --id Python.Python.3.11 --exact --accept-source-agreements --accept-package-agreements --silent
+            # PATH aktualisieren
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+            Write-Host "✅ Python erfolgreich installiert" -ForegroundColor Green
+        }
+        catch {
+            Write-Host "❌ Python Installation fehlgeschlagen: $_" -ForegroundColor Red
+            exit 1
+        }
+    }
+
+    # 3. Paketinstallation
+    Show-Progress -step 3 -message "Installiere Python-Pakete..."
+    $packages = @(
+        @{Name="yt-dlp"; Test="import yt_dlp; print(yt_dlp.__version__)"},
+        @{Name="ytmusicapi"; Test="import ytmusicapi; print(ytmusicapi.__version__)"},
+        @{Name="browser-cookie3"; Test="import browser_cookie3; print('OK')"}
+    )
+
+    foreach ($pkg in $packages) {
+        Write-Host "`n🔧 Installiere $($pkg.Name)..." -ForegroundColor Cyan
+        try {
+            python -m pip install --upgrade $pkg.Name --disable-pip-version-check
+            $version = python -c $pkg.Test 2>&1
+            Write-Host "✅ $($pkg.Name) erfolgreich ($version)" -ForegroundColor Green
+        }
+        catch {
+            Write-Host "⚠️ Problem mit $($pkg.Name): $_" -ForegroundColor Yellow
+        }
+        Start-Sleep -Milliseconds 500  # Pause zwischen Paketen
+    }
+
+    # 4. Abschlussprüfung
+    Show-Progress -step 4 -message "Führe Abschlussprüfung durch..."
     try {
-        $progressPreference = 'silentlyContinue'
-        irm https://aka.ms/getwinget -OutFile winget.msixbundle -UseBasicParsing
-        Add-AppxPackage -Path winget.msixbundle
-        Remove-Item winget.msixbundle -ErrorAction SilentlyContinue
+        $ytdlp = python -c "import yt_dlp; print(yt_dlp.__version__)" 2>&1
+        $ytmusic = python -c "import ytmusicapi; print(ytmusicapi.__version__)" 2>&1
+        
+        Write-Host "`n🎉 Installation erfolgreich abgeschlossen!" -ForegroundColor Green
+        Write-Host "📌 yt-dlp Version: $ytdlp" -ForegroundColor Cyan
+        Write-Host "📌 ytmusicapi Version: $ytmusic" -ForegroundColor Cyan
+        Write-Host "`nVerwendung: python -m yt_dlp [URL]" -ForegroundColor White
     }
     catch {
-        Write-Host "❌ Winget-Installation fehlgeschlagen" -ForegroundColor Red
+        Write-Host "❌ Kritischer Fehler bei der Verifikation: $_" -ForegroundColor Red
         exit 1
     }
 }
-
-# 2. Python 3.11 installieren
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-    Write-Host "🐍 Python 3.11 wird installiert..." -ForegroundColor Cyan
-    winget install --id Python.Python.3.11 --exact --accept-source-agreements --accept-package-agreements
-    # PATH aktualisieren
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+finally {
+    Write-Host "`nℹ️ Drücken Sie eine Taste zum Beenden..." -ForegroundColor Gray
+    $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
 }
-
-# 3. Pakete installieren
-$packages = @("yt-dlp", "ytmusicapi", "browser-cookie3")
-Write-Host "📦 Installiere Pakete..." -ForegroundColor Cyan
-
-python -m ensurepip --upgrade
-foreach ($pkg in $packages) {
-    python -m pip install --upgrade $pkg
-    if ($LASTEXITCODE -ne 0) { Write-Host "⚠️ Problem mit $pkg" -ForegroundColor Yellow }
-}
-
-# 4. Verifikation
-Write-Host "`n🔍 Überprüfe Installation:" -ForegroundColor Green
-try {
-    python -c "import yt_dlp; print(f'✅ yt-dlp {yt_dlp.__version__}')"
-    python -c "import ytmusicapi; print(f'✅ ytmusicapi {ytmusicapi.__version__}')"
-    python -c "import browser_cookie3; print('✅ browser-cookie3')"
-}
-catch {
-    Write-Host "❌ Verifikation fehlgeschlagen: $_" -ForegroundColor Red
-    exit 1
-}
-
-Write-Host "`n🎉 Installation erfolgreich!" -ForegroundColor Green
-Write-Host "Verwendung: python -m yt_dlp [URL]" -ForegroundColor Cyan
-Write-Host "Deinstallieren: pip uninstall yt-dlp ytmusicapi browser-cookie3" -ForegroundColor DarkGray
