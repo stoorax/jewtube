@@ -1,63 +1,123 @@
 # check_env.ps1
-Write-Output "=== Umgebung prüfen für yt-dlp & Co. ==="
 
-# 1. Python prüfen
-Write-Output "Prüfe Python Installation..."
+# Helper-Funktionen für farbige Ausgaben
+function Write-WarningColor($message) {
+    Write-Host "WARNING: $message" -ForegroundColor Red
+}
+function Write-SuccessColor($message) {
+    Write-Host "SUCCESS: $message" -ForegroundColor Green
+}
+function Write-Info($message) {
+    Write-Host $message -ForegroundColor White
+}
+
+Write-Info "=== Checking environment for yt-dlp & related tools ==="
+
+# Check Python
+Write-Info "Checking Python installation..."
 $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
 if ($null -eq $pythonCmd) {
-    Write-Warning "Python wurde nicht gefunden!"
+    Write-WarningColor "Python not found!"
+    $pythonFound = $false
 } else {
     $version = python --version 2>&1
     if ($version -match "Python 3\.[8-9]|Python [4-9]") {
-        Write-Output "Python Version OK: $version"
+        Write-SuccessColor "Python version OK: $version"
+        $pythonFound = $true
     } else {
-        Write-Warning "Python Version veraltet oder nicht kompatibel: $version"
+        Write-WarningColor "Python version incompatible or outdated: $version"
+        $pythonFound = $false
     }
 }
 
-# 2. Pip prüfen
-Write-Output "Prüfe pip..."
+# Check pip
+Write-Info "Checking pip..."
 $pipCmd = Get-Command pip -ErrorAction SilentlyContinue
 if ($null -eq $pipCmd) {
-    Write-Warning "pip nicht gefunden!"
+    Write-WarningColor "pip not found!"
+    $pipFound = $false
 } else {
     $pipVersion = pip --version 2>&1
-    Write-Output "pip gefunden: $pipVersion"
+    Write-SuccessColor "pip found: $pipVersion"
+    $pipFound = $true
 }
 
-# 3. yt-dlp prüfen
-Write-Output "Prüfe yt-dlp..."
+# Check yt-dlp
+Write-Info "Checking yt-dlp..."
 try {
     $ytDlpVersion = yt-dlp --version 2>&1
-    Write-Output "yt-dlp gefunden: Version $ytDlpVersion"
+    Write-SuccessColor "yt-dlp found: Version $ytDlpVersion"
+    $ytDlpFound = $true
 } catch {
-    Write-Warning "yt-dlp nicht gefunden!"
+    Write-WarningColor "yt-dlp not found!"
+    $ytDlpFound = $false
 }
 
-# 4. ytmusicapi Modul prüfen (in Python)
-Write-Output "Prüfe Python-Modul ytmusicapi..."
-try {
-    python -c "import ytmusicapi" 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        Write-Output "ytmusicapi installiert."
+# Function to check if python module is installed
+function Check-PythonModule($moduleName) {
+    $code = "import $moduleName"
+    python -c $code 2>$null
+    return $LASTEXITCODE -eq 0
+}
+
+# Check ytmusicapi
+Write-Info "Checking Python module ytmusicapi..."
+if ($pythonFound -and (Check-PythonModule "ytmusicapi")) {
+    Write-SuccessColor "ytmusicapi is installed."
+    $ytmusicapiFound = $true
+} else {
+    Write-WarningColor "ytmusicapi is NOT installed."
+    $ytmusicapiFound = $false
+}
+
+# Check browser_cookie3
+Write-Info "Checking Python module browser_cookie3..."
+if ($pythonFound -and (Check-PythonModule "browser_cookie3")) {
+    Write-SuccessColor "browser_cookie3 is installed."
+    $browserCookieFound = $true
+} else {
+    Write-WarningColor "browser_cookie3 is NOT installed."
+    $browserCookieFound = $false
+}
+
+Write-Info "`n=== Environment check complete ==="
+
+# Optional: automatic install of missing python packages
+if ($pythonFound -and $pipFound) {
+    $toInstall = @()
+    if (-not $ytmusicapiFound) { $toInstall += "ytmusicapi" }
+    if (-not $browserCookieFound) { $toInstall += "browser_cookie3" }
+    if (-not $ytDlpFound) { $toInstall += "yt-dlp" }
+
+    if ($toInstall.Count -gt 0) {
+        Write-Info "`nInstalling missing packages: $($toInstall -join ', ') ..."
+        python -m pip install --upgrade pip
+        python -m pip install $toInstall
+
+        Write-Info "Re-checking installed packages..."
+
+        # Re-check modules
+        if (Check-PythonModule "ytmusicapi") {
+            Write-SuccessColor "ytmusicapi successfully installed."
+        } else {
+            Write-WarningColor "Failed to install ytmusicapi."
+        }
+
+        if (Check-PythonModule "browser_cookie3") {
+            Write-SuccessColor "browser_cookie3 successfully installed."
+        } else {
+            Write-WarningColor "Failed to install browser_cookie3."
+        }
+
+        try {
+            $ytDlpVersion = yt-dlp --version 2>&1
+            Write-SuccessColor "yt-dlp successfully installed: Version $ytDlpVersion"
+        } catch {
+            Write-WarningColor "Failed to install yt-dlp."
+        }
     } else {
-        Write-Warning "ytmusicapi nicht installiert."
+        Write-SuccessColor "All required packages are installed."
     }
-} catch {
-    Write-Warning "Fehler beim Prüfen von ytmusicapi."
+} else {
+    Write-WarningColor "Python or pip not available — skipping package installation."
 }
-
-# 5. browser_cookie3 prüfen
-Write-Output "Prüfe Python-Modul browser_cookie3..."
-try {
-    python -c "import browser_cookie3" 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        Write-Output "browser_cookie3 installiert."
-    } else {
-        Write-Warning "browser_cookie3 nicht installiert."
-    }
-} catch {
-    Write-Warning "Fehler beim Prüfen von browser_cookie3."
-}
-
-Write-Output "=== Prüfung abgeschlossen ==="
