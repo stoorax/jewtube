@@ -1,11 +1,41 @@
-# JewTube Installer (Finale Version)
+# JewTube Installer (WindowsApps Fix)
 # Ausführung mit: irm https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer | iex
 
+function Get-RealPython {
+    # Findet eine echte Python-Installation und ignoriert den Store-Alias
+    $possiblePaths = @(
+        "$env:LocalAppData\Programs\Python\Python311\python.exe",
+        "C:\Program Files\Python311\python.exe",
+        "$env:LocalAppData\Programs\Python\Python310\python.exe",
+        "C:\Program Files\Python310\python.exe",
+        "$env:AppData\Python\python.exe"
+    )
+    
+    foreach ($path in $possiblePaths) {
+        if (Test-Path $path) {
+            return $path
+        }
+    }
+    
+    # Fallback über PATH, aber ignoriere WindowsApps
+    try {
+        $pythonPath = (Get-Command python -ErrorAction Stop).Source
+        if (-not $pythonPath.Contains("WindowsApps")) {
+            return $pythonPath
+        }
+    }
+    catch {
+        return $null
+    }
+    
+    return $null
+}
+
 function Install-PythonWithWinget {
-    # Installiert Python 3.11 mit winget und stellt sicher, dass es im PATH ist
+    # Installiert Python 3.11 mit winget
     Write-Host "Installiere Python mit winget..." -ForegroundColor Cyan
     
-    # Führe winget install aus und warte auf Abschluss
+    # Führe winget install aus
     $process = Start-Process -FilePath "winget" -ArgumentList @(
         "install",
         "--id=Python.Python.3.11",
@@ -23,17 +53,7 @@ function Install-PythonWithWinget {
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + 
                 [System.Environment]::GetEnvironmentVariable("Path", "User")
     
-    # Finde den Python-Pfad
-    $pythonPath = @(
-        "$env:LocalAppData\Programs\Python\Python311\python.exe",
-        "C:\Program Files\Python311\python.exe"
-    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-    
-    if (-not $pythonPath) {
-        throw "Python wurde installiert, aber Pfad nicht gefunden"
-    }
-    
-    return $pythonPath
+    return Get-RealPython
 }
 
 function Write-Step {
@@ -73,29 +93,40 @@ try {
             Remove-Item $tempFile -ErrorAction SilentlyContinue
         }
     }
-    else {
-        Write-Host "Winget ist installiert" -ForegroundColor Green
-    }
 
     # 2. Python Installation
     Write-Step -step 2 -message "Überprüfe Python 3.11"
-    $pythonExe = $null
+    $pythonExe = Get-RealPython
     
-    # Versuche Python zu finden
-    $pythonExe = @(
-        "$env:LocalAppData\Programs\Python\Python311\python.exe",
-        "C:\Program Files\Python311\python.exe",
-        (Get-Command python -ErrorAction SilentlyContinue).Source
-    ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-
     if (-not $pythonExe) {
-        Write-Host "Python nicht gefunden, installiere..." -ForegroundColor Yellow
+        Write-Host "Keine echte Python-Installation gefunden" -ForegroundColor Yellow
         $pythonExe = Install-PythonWithWinget
+        
+        if (-not $pythonExe) {
+            throw "Python wurde installiert, aber nicht gefunden"
+        }
+        
         Write-Host "✅ Python installiert: $pythonExe" -ForegroundColor Green
     }
     else {
+        # Prüfe ob es eine echte Installation ist
+        $pythonVersion = & `"$pythonExe`" --version 2>&1
         Write-Host "Python gefunden: $pythonExe" -ForegroundColor Green
-        Write-Host "Version: $(& `"$pythonExe`" --version 2>&1)" -ForegroundColor Green
+        Write-Host "Version: $pythonVersion" -ForegroundColor Green
+        
+        # Warnung wenn es der Store-Alias ist
+        if ($pythonExe -like "*WindowsApps*") {
+            Write-Host "⚠️ WARNUNG: Store-Alias erkannt! Er wird nicht funktionieren." -ForegroundColor Red
+            Write-Host "Lösche Store-Alias und installiere Python neu..." -ForegroundColor Yellow
+            
+            # Lösche den Store-Alias
+            $aliasPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\python.exe"
+            if (Test-Path $aliasPath) {
+                Remove-Item -Path $aliasPath -Force -ErrorAction SilentlyContinue
+            }
+            
+            $pythonExe = Install-PythonWithWinget
+        }
     }
 
     # 3. Pakete installieren
