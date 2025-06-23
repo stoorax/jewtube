@@ -1,4 +1,4 @@
-# JewTube Installer (Korrigierte Versionsprüfung)
+# JewTube Installer (Stable & Getestet)
 # Ausführung mit: iwr https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer | iex
 
 # Logfile erstellen
@@ -43,7 +43,7 @@ try {
         & $pythonExe -m pip install --upgrade $pkg --disable-pip-version-check
     }
 
-    # 3. Versionsprüfung mit CLI-Befehlen
+    # 3. Versionsprüfung
     Write-Host "`n=== Versionsprüfung ==="
     
     # yt-dlp Version über direkten CLI-Befehl
@@ -61,6 +61,7 @@ try {
     & $pythonExe -c "from yt_dlp import YoutubeDL; print('YoutubeDL Import erfolgreich!')" 2>&1
     
     # Test 2: yt-dlp CLI-Simulation
+    Write-Host "Führe Download-Simulationstest aus..."
     yt-dlp --simulate --format best "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Download-Simulation erfolgreich!" -ForegroundColor Green
