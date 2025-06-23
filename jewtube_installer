@@ -1,4 +1,4 @@
-# JewTube Installer (Stable Version)
+# JewTube Installer (Korrigierte Versionsprüfung)
 # Ausführung mit: iwr https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer | iex
 
 # Logfile erstellen
@@ -34,64 +34,4 @@ try {
     if (-not $pythonExe) {
         throw "Python nicht gefunden!"
     }
-    Write-Host "Python gefunden: $pythonExe"
-
-    # 2. Pakete installieren
-    $packages = @("yt-dlp", "ytmusicapi", "browser-cookie3")
-    foreach ($pkg in $packages) {
-        Write-Host "Installiere $pkg..."
-        & $pythonExe -m pip install --upgrade $pkg --disable-pip-version-check
-    }
-
-    # 3. Funktionstests statt Versionsprüfung
-    Write-Host "`n=== Funktionstests ==="
-    
-    # Test 1: yt-dlp CLI
-    Write-Host "Teste yt-dlp CLI..."
-    yt-dlp --version
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "yt-dlp CLI funktioniert" -ForegroundColor Green
-    }
-    else {
-        Write-Host "yt-dlp CLI fehlgeschlagen" -ForegroundColor Red
-    }
-    
-    # Test 2: ytmusicapi Import
-    Write-Host "Teste ytmusicapi Import..."
-    & $pythonExe -c "from ytmusicapi import YTMusic; print('YTMusic Import erfolgreich')" 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "ytmusicapi Import funktioniert" -ForegroundColor Green
-    }
-    else {
-        Write-Host "ytmusicapi Import fehlgeschlagen" -ForegroundColor Red
-    }
-    
-    # Test 3: Kompletter Download-Simulationstest
-    Write-Host "`nTeste YouTube Download-Simulation..."
-    yt-dlp --simulate --format best "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "Download-Simulation erfolgreich!" -ForegroundColor Green
-    }
-    else {
-        Write-Host "Download-Simulation fehlgeschlagen" -ForegroundColor Red
-    }
-
-    Write-Host "`n=== ERFOLG ===" -ForegroundColor Green
-    Write-Host "Alle Komponenten erfolgreich installiert und getestet!"
-}
-catch {
-    Write-Host "`n=== FEHLER ===" -ForegroundColor Red
-    Write-Host $_
-}
-finally {
-    # Logfile anzeigen
-    Write-Host "`n=== Logfile ==="
-    Write-Host "Öffne Logfile: $logFile"
-    Start-Process notepad $logFile
-    
-    # Auf Benutzereingabe warten
-    Write-Host "`nDrücken Sie ENTER zum Beenden..."
-    [void][System.Console]::ReadLine()
-    
-    Stop-Transcript | Out-Null
-}
+    Write-H
