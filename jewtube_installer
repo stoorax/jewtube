@@ -1,5 +1,5 @@
-# JewTube PROPER Installer
-# Garantiert funktionierende Installation mit allen Abhängigkeiten
+# JewTube ULTIMATE Installer
+# Behebt alle Pip- und Modul-Probleme
 
 $ErrorActionPreference = "Stop"
 
@@ -9,7 +9,7 @@ $PYTHON_VERSION = "3.11.9"
 $PYTHON_URL = "https://www.python.org/ftp/python/$PYTHON_VERSION/python-$PYTHON_VERSION-embed-amd64.zip"
 $PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
 
-Write-Host "`n=== JewTube PROPER Installation ===" -ForegroundColor Cyan
+Write-Host "`n=== JewTube ULTIMATE Installation ===" -ForegroundColor Cyan
 Write-Host "Zielverzeichnis: $INSTALL_DIR" -ForegroundColor Yellow
 
 # 2. Clean install
@@ -22,15 +22,17 @@ New-Item -ItemType Directory -Path $INSTALL_DIR | Out-Null
 Push-Location $INSTALL_DIR
 
 try {
-    # 3. Install portable Python
+    # 3. Download and extract Python
     Write-Host "Lade Python herunter..." -ForegroundColor Cyan
     Invoke-WebRequest -Uri $PYTHON_URL -OutFile "python.zip" -UseBasicParsing
     Expand-Archive -Path "python.zip" -DestinationPath .
     Remove-Item "python.zip" -Force
 
-    # 4. Critical Python configuration
+    # 4. Fix critical Python configuration
     Write-Host "Konfiguriere Python..." -ForegroundColor Cyan
     New-Item -ItemType Directory -Path "Lib\site-packages" -Force | Out-Null
+    
+    # Create proper ._pth file
     Set-Content -Path "python._pth" @"
 python${PYTHON_VERSION}.zip
 .
@@ -38,19 +40,26 @@ Lib\site-packages
 import site
 "@
 
-    # 5. Install pip properly
-    Write-Host "Installiere pip..." -ForegroundColor Cyan
+    # 5. PROPER pip installation
+    Write-Host "Installiere pip KORREKT..." -ForegroundColor Cyan
     Invoke-WebRequest -Uri $PIP_URL -OutFile "get-pip.py" -UseBasicParsing
-    .\python.exe get-pip.py --no-warn-script-location
+    
+    # First install pip to the local environment
+    $env:PYTHONPATH = "$PWD\Lib\site-packages"
+    .\python.exe get-pip.py --no-warn-script-location --target="Lib\site-packages"
+    
+    # Verify pip is working
+    if (-not (Test-Path "Lib\site-packages\pip")) {
+        throw "Pip-Installation fehlgeschlagen"
+    }
     Remove-Item "get-pip.py" -Force
 
-    # 6. Install packages CORRECTLY
+    # 6. Install packages with PROPER pip
     Write-Host "Installiere Pakete..." -ForegroundColor Cyan
-    $env:PYTHONPATH = "$PWD\Lib\site-packages"
     .\python.exe -m pip install --target="Lib\site-packages" --no-warn-script-location yt-dlp ytmusicapi browser_cookie3
-
+    
     # 7. Verify installation
-    Write-Host "Überprüfe Installation..." -ForegroundColor Cyan
+    Write-Host "Teste Installation..." -ForegroundColor Cyan
     $test = .\python.exe -c "import yt_dlp; print(yt_dlp.__version__)" 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "Test fehlgeschlagen: $test"
