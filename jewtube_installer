@@ -69,6 +69,7 @@ if (-NOT $adminCheck.IsInRole([Security.Principal.WindowsBuiltInRole]::Administr
 try {
     # 1. Winget Installation
     Write-Step -step 1 -message "Überprüfe winget"
+
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
         Write-Host "Installiere winget..." -ForegroundColor Yellow
         $tempFile = "$env:TEMP\winget_install.msixbundle"
