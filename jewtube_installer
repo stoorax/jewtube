@@ -1,44 +1,42 @@
-# JewTube Installer mit Fortschrittsanzeige
+# JewTube Installer mit persistentem Fenster
 # Ausführung mit: irm https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer | iex
 
-function Show-Progress {
+function Write-Step {
     param($step, $message)
-    Write-Host "`n[$step/4] $message" -ForegroundColor Cyan
-    Start-Sleep -Milliseconds 300  # Kurze Pause für bessere Lesbarkeit
+    Write-Host "`n=====[ SCHRITT $step ]=====" -ForegroundColor Magenta
+    Write-Host $message -ForegroundColor Cyan
 }
 
-# Admin-Check mit besserer Rückmeldung
+# Admin-Check mit besseren Hinweisen
 if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Host "`n🛑 Admin-Rechte benötigt - Starte neu mit Administratorrechten..." -ForegroundColor Yellow
-    $scriptUrl = "https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer"
+    Write-Host "`n⚠️ ADMIN-REICHTE ERFORDERLICH" -ForegroundColor Red
+    Write-Host "Das Skript wird sich neu starten..." -ForegroundColor Yellow
     
-    try {
-        Start-Process powershell -Verb RunAs -ArgumentList @"
--NoProfile -ExecutionPolicy Bypass -Command "irm '$scriptUrl' | iex; pause"
+    $scriptUrl = "https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer"
+    $command = @"
+Start-Process powershell -Verb RunAs -ArgumentList '-NoExit -NoProfile -ExecutionPolicy Bypass -Command "irm \`"$scriptUrl\`" | iex"'
 "@
-    }
-    catch {
-        Write-Host "❌ Admin-Rechte verweigert! Bitte PowerShell als Administrator starten." -ForegroundColor Red
-    }
+
+    Invoke-Expression $command
     exit
 }
 
-### Hauptinstallationsroutine ###
+### HAUPTPROGRAMM ###
 try {
     # 1. Winget Installation
-    Show-Progress -step 1 -message "Prüfe winget Installation..."
+    Write-Step -step 1 -message "Überprüfe winget Installation"
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-Host "ℹ️ Winget nicht gefunden, installiere..." -ForegroundColor Yellow
+        Write-Host "Winget nicht gefunden, installiere..." -ForegroundColor Yellow
         
-        $tempFile = "$env:TEMP\winget.msixbundle"
+        $tempFile = "$env:TEMP\winget_install.msixbundle"
         try {
             Invoke-WebRequest -Uri https://aka.ms/getwinget -OutFile $tempFile -UseBasicParsing
             Add-AppxPackage -Path $tempFile -ErrorAction Stop
             Write-Host "✅ Winget erfolgreich installiert" -ForegroundColor Green
         }
         catch {
-            Write-Host "❌ Winget Installation fehlgeschlagen: $_" -ForegroundColor Red
-            exit 1
+            Write-Host "❌ Fehler: $_" -ForegroundColor Red
+            throw "Winget Installation fehlgeschlagen"
         }
         finally {
             if (Test-Path $tempFile) { Remove-Item $tempFile }
@@ -46,60 +44,66 @@ try {
     }
 
     # 2. Python Installation
-    Show-Progress -step 2 -message "Prüfe Python 3.11..."
+    Write-Step -step 2 -message "Überprüfe Python 3.11"
     if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-        Write-Host "ℹ️ Python nicht gefunden, installiere..." -ForegroundColor Yellow
+        Write-Host "Python nicht gefunden, installiere..." -ForegroundColor Yellow
         
         try {
-            winget install --id Python.Python.3.11 --exact --accept-source-agreements --accept-package-agreements --silent
+            $install = winget install --id Python.Python.3.11 --exact --accept-source-agreements --accept-package-agreements
+            if ($install.ExitCode -ne 0) { throw "Exit Code $($install.ExitCode)" }
+            
             # PATH aktualisieren
             $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
             Write-Host "✅ Python erfolgreich installiert" -ForegroundColor Green
         }
         catch {
-            Write-Host "❌ Python Installation fehlgeschlagen: $_" -ForegroundColor Red
-            exit 1
+            Write-Host "❌ Fehler: $_" -ForegroundColor Red
+            throw "Python Installation fehlgeschlagen"
         }
     }
 
     # 3. Paketinstallation
-    Show-Progress -step 3 -message "Installiere Python-Pakete..."
+    Write-Step -step 3 -message "Installiere benötigte Pakete"
     $packages = @(
-        @{Name="yt-dlp"; Test="import yt_dlp; print(yt_dlp.__version__)"},
-        @{Name="ytmusicapi"; Test="import ytmusicapi; print(ytmusicapi.__version__)"},
-        @{Name="browser-cookie3"; Test="import browser_cookie3; print('OK')"}
+        @{Name="yt-dlp"; Test="import yt_dlp; print(f'Version: {yt_dlp.__version__}')"},
+        @{Name="ytmusicapi"; Test="import ytmusicapi; print(f'Version: {ytmusicapi.__version__}')"},
+        @{Name="browser-cookie3"; Test="import browser_cookie3; print('Import erfolgreich')"}
     )
 
     foreach ($pkg in $packages) {
-        Write-Host "`n🔧 Installiere $($pkg.Name)..." -ForegroundColor Cyan
+        Write-Host "`n🔄 Installiere $($pkg.Name)..." -ForegroundColor Blue
         try {
+            # Installiere Paket
             python -m pip install --upgrade $pkg.Name --disable-pip-version-check
-            $version = python -c $pkg.Test 2>&1
-            Write-Host "✅ $($pkg.Name) erfolgreich ($version)" -ForegroundColor Green
+            
+            # Verifiziere Installation
+            $result = python -c $pkg.Test 2>&1
+            Write-Host "✅ $($pkg.Name) installiert: $result" -ForegroundColor Green
         }
         catch {
-            Write-Host "⚠️ Problem mit $($pkg.Name): $_" -ForegroundColor Yellow
+            Write-Host "⚠️ Warnung: $($pkg.Name) konnte nicht verifiziert werden: $_" -ForegroundColor Yellow
         }
-        Start-Sleep -Milliseconds 500  # Pause zwischen Paketen
+        Start-Sleep -Milliseconds 800  # Lesbare Pause
     }
 
-    # 4. Abschlussprüfung
-    Show-Progress -step 4 -message "Führe Abschlussprüfung durch..."
-    try {
-        $ytdlp = python -c "import yt_dlp; print(yt_dlp.__version__)" 2>&1
-        $ytmusic = python -c "import ytmusicapi; print(ytmusicapi.__version__)" 2>&1
-        
-        Write-Host "`n🎉 Installation erfolgreich abgeschlossen!" -ForegroundColor Green
-        Write-Host "📌 yt-dlp Version: $ytdlp" -ForegroundColor Cyan
-        Write-Host "📌 ytmusicapi Version: $ytmusic" -ForegroundColor Cyan
-        Write-Host "`nVerwendung: python -m yt_dlp [URL]" -ForegroundColor White
-    }
-    catch {
-        Write-Host "❌ Kritischer Fehler bei der Verifikation: $_" -ForegroundColor Red
-        exit 1
-    }
+    # 4. Abschluss
+    Write-Step -step 4 -message "Installation abgeschlossen"
+    Write-Host "`n🎉 JEWTUBE ERFOLGREICH INSTALLIERT" -ForegroundColor Green
+    Write-Host "Verfügbare Kommandos:" -ForegroundColor Cyan
+    Write-Host "• python -m yt_dlp [URL]" -ForegroundColor White
+    Write-Host "• python -m ytmusicapi" -ForegroundColor White
+    
+    # Systeminformationen
+    Write-Host "`nSysteminformationen:" -ForegroundColor Gray
+    Write-Host "Python: $(python --version 2>&1)" -ForegroundColor Gray
+    Write-Host "yt-dlp: $(python -c 'import yt_dlp; print(yt_dlp.__version__)' 2>&1)" -ForegroundColor Gray
+}
+catch {
+    Write-Host "`n❌❌❌ KRITISCHER FEHLER ❌❌❌" -ForegroundColor Red
+    Write-Host "Fehlerdetails: $_" -ForegroundColor Red
 }
 finally {
-    Write-Host "`nℹ️ Drücken Sie eine Taste zum Beenden..." -ForegroundColor Gray
-    $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+    Write-Host "`nDas Fenster schließt sich in 15 Sekunden automatisch..."
+    Write-Host "Drücken Sie STRG+C um sofort zu beenden" -ForegroundColor DarkYellow
+    Start-Sleep -Seconds 15
 }
