@@ -14,36 +14,46 @@ Write-Host " - browser_cookie3" -ForegroundColor Yellow
 Write-Host ""
 Pause
 
-# Helper functions
+function Wait-User() {
+    Write-Host ""
+    Read-Host "Press [Enter] to continue..."
+}
+
 function Write-WarningColor($msg) { Write-Host "WARNING: $msg" -ForegroundColor Red }
 function Write-SuccessColor($msg) { Write-Host "SUCCESS: $msg" -ForegroundColor Green }
 function Write-Info($msg)    { Write-Host $msg -ForegroundColor White }
 
 # Check Winget
+Write-Info "Checking for Winget..."
 $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
 if ($null -eq $wingetCmd) {
     Write-WarningColor "Winget not found! Cannot auto-install Python. Install manually and re-run this script."
-    Pause
+    Wait-User
     exit 1
+} else {
+    Write-SuccessColor "Winget found."
 }
+Wait-User
 
 # Check Python
 Write-Info "Checking for Python installation..."
 $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
 if ($null -eq $pythonCmd) {
     Write-WarningColor "Python not found! Installing via winget now..."
-    Pause
+    Wait-User
     winget install --id Python.Python.3 --source winget --silent --accept-source-agreements --accept-package-agreements
     Write-Info "Waiting for Python install to finish..."
     Start-Sleep -Seconds 10
 } else {
     Write-SuccessColor "Python found: $(python --version)"
 }
+Wait-User
 
 # Reload PATH for this session
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine")
 
 # Check pip
+Write-Info "Checking for pip..."
 $pipCmd = Get-Command pip -ErrorAction SilentlyContinue
 if ($null -eq $pipCmd) {
     Write-Info "Ensuring pip is installed..."
@@ -51,16 +61,20 @@ if ($null -eq $pipCmd) {
 } else {
     Write-SuccessColor "Pip found: $(pip --version)"
 }
+Wait-User
 
 # Upgrade pip
 Write-Info "Upgrading pip to latest version..."
 python -m pip install --upgrade pip
+Write-SuccessColor "Pip upgrade done."
+Wait-User
 
 # Required packages
 $packages = @("yt-dlp", "ytmusicapi", "browser_cookie3")
 Write-Info "Installing required Python packages: $($packages -join ', ') ..."
-Pause
 python -m pip install --upgrade $packages
+Write-SuccessColor "Package installation complete."
+Wait-User
 
 # Final checks
 function Check-PythonModule($module) {
@@ -77,6 +91,7 @@ foreach ($pkg in @("ytmusicapi", "browser_cookie3")) {
         $errors++
     }
 }
+Wait-User
 
 try {
     $ytDlpVersion = yt-dlp --version 2>&1
@@ -85,6 +100,7 @@ try {
     Write-WarningColor "yt-dlp NOT installed."
     $errors++
 }
+Wait-User
 
 if ($errors -eq 0) {
     Write-Host ""
@@ -93,7 +109,8 @@ if ($errors -eq 0) {
     Write-Host ""
     Write-WarningColor "Some components failed to install. Please check manually before using Jewtube."
 }
+Wait-User
 
 Write-Host ""
 Write-Host "=== Installer completed ===" -ForegroundColor Cyan
-Pause
+Wait-User
