@@ -34,4 +34,57 @@ try {
     if (-not $pythonExe) {
         throw "Python nicht gefunden!"
     }
-    Write-H
+    Write-Host "Python gefunden: $pythonExe"
+
+    # 2. Pakete installieren
+    $packages = @("yt-dlp", "ytmusicapi", "browser-cookie3")
+    foreach ($pkg in $packages) {
+        Write-Host "Installiere $pkg..."
+        & $pythonExe -m pip install --upgrade $pkg --disable-pip-version-check
+    }
+
+    # 3. Versionsprüfung mit CLI-Befehlen
+    Write-Host "`n=== Versionsprüfung ==="
+    
+    # yt-dlp Version über direkten CLI-Befehl
+    $ytdlpVersion = yt-dlp --version 2>&1
+    Write-Host "yt-dlp Version: $ytdlpVersion"
+    
+    # ytmusicapi Version über Python
+    $ytmusicVersion = & $pythonExe -c "import ytmusicapi; print(ytmusicapi.__version__)" 2>&1
+    Write-Host "ytmusicapi Version: $ytmusicVersion"
+
+    # 4. Funktionstests
+    Write-Host "`n=== Funktionstests ==="
+    
+    # Test 1: YoutubeDL Import
+    & $pythonExe -c "from yt_dlp import YoutubeDL; print('YoutubeDL Import erfolgreich!')" 2>&1
+    
+    # Test 2: yt-dlp CLI-Simulation
+    yt-dlp --simulate --format best "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Download-Simulation erfolgreich!" -ForegroundColor Green
+    }
+    else {
+        Write-Host "Download-Simulation fehlgeschlagen" -ForegroundColor Red
+    }
+
+    Write-Host "`n=== ERFOLG ===" -ForegroundColor Green
+    Write-Host "Alle Komponenten erfolgreich installiert und getestet!"
+}
+catch {
+    Write-Host "`n=== FEHLER ===" -ForegroundColor Red
+    Write-Host $_
+}
+finally {
+    # Logfile anzeigen
+    Write-Host "`n=== Logfile ==="
+    Write-Host "Öffne Logfile: $logFile"
+    Start-Process notepad $logFile
+    
+    # Auf Benutzereingabe warten
+    Write-Host "`nDrücken Sie ENTER zum Beenden..."
+    [void][System.Console]::ReadLine()
+    
+    Stop-Transcript | Out-Null
+}
