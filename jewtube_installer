@@ -1,4 +1,4 @@
-# JewTube Installer (Logfile Auto-Open)
+# JewTube Installer (Finale Version mit direkter Versionsprüfung)
 # Ausführung mit: iwr https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer | iex
 
 # Logfile erstellen
@@ -26,36 +26,44 @@ if (-NOT $adminCheck.IsInRole([Security.Principal.WindowsBuiltInRole]::Administr
 }
 
 Write-Host "=== JewTube Installation ==="
-Write-Host "Logfile wird erstellt: $logFile`n"
+Write-Host "Logfile: $logFile`n"
 
 try {
-    # Python-Suche
+    # 1. Python finden
     $pythonExe = Get-RealPython
     if (-not $pythonExe) {
         throw "Python nicht gefunden!"
     }
     Write-Host "Python gefunden: $pythonExe"
 
-    # Paketinstallation
+    # 2. Pakete installieren
     $packages = @("yt-dlp", "ytmusicapi", "browser-cookie3")
     foreach ($pkg in $packages) {
         Write-Host "Installiere $pkg..."
         & $pythonExe -m pip install --upgrade $pkg --disable-pip-version-check
     }
 
-    # Korrigierte Versionsprüfung
+    # 3. Versionsprüfung mit direkten Befehlen
     Write-Host "`n=== Versionsprüfung ==="
     
-    # yt-dlp mit garantierter Methode
-    $ytdlpVersion = & $pythonExe -c "from yt_dlp import __version__; print(__version__)" 2>&1
-    Write-Host "yt-dlp: $ytdlpVersion"
+    # yt-dlp Version über CLI
+    $ytdlpVersion = yt-dlp --version 2>&1
+    Write-Host "yt-dlp Version: $ytdlpVersion"
     
+    # ytmusicapi Version über Python
     $ytmusicVersion = & $pythonExe -c "import ytmusicapi; print(ytmusicapi.__version__)" 2>&1
-    Write-Host "ytmusicapi: $ytmusicVersion"
+    Write-Host "ytmusicapi Version: $ytmusicVersion"
     
-    # Funktionstest
+    # 4. Funktionstest
     Write-Host "`n=== Funktionstest ==="
-    & $pythonExe -c "from yt_dlp import YoutubeDL; print('YoutubeDL Import erfolgreich!')" 2>&1
+    yt-dlp --simulate --format best "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Funktionstest erfolgreich!" -ForegroundColor Green
+    }
+    else {
+        Write-Host "Funktionstest fehlgeschlagen" -ForegroundColor Red
+    }
 
     Write-Host "`n=== ERFOLG ===" -ForegroundColor Green
     Write-Host "Alle Komponenten erfolgreich installiert!"
@@ -69,6 +77,10 @@ finally {
     Write-Host "`n=== Logfile ==="
     Write-Host "Öffne Logfile: $logFile"
     notepad $logFile
+    
+    # Auf Benutzereingabe warten
+    Write-Host "`nDrücken Sie ENTER zum Beenden..."
+    [void][System.Console]::ReadLine()
     
     Stop-Transcript | Out-Null
 }
