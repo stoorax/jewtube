@@ -1,14 +1,13 @@
-# JewTube Installer (WindowsApps Fix)
+# JewTube Installer (Korrigierte Admin-Eskalation)
 # Ausführung mit: irm https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer | iex
 
 function Get-RealPython {
-    # Findet eine echte Python-Installation und ignoriert den Store-Alias
+    # Findet eine echte Python-Installation
     $possiblePaths = @(
         "$env:LocalAppData\Programs\Python\Python311\python.exe",
         "C:\Program Files\Python311\python.exe",
         "$env:LocalAppData\Programs\Python\Python310\python.exe",
-        "C:\Program Files\Python310\python.exe",
-        "$env:AppData\Python\python.exe"
+        "C:\Program Files\Python310\python.exe"
     )
     
     foreach ($path in $possiblePaths) {
@@ -16,18 +15,6 @@ function Get-RealPython {
             return $path
         }
     }
-    
-    # Fallback über PATH, aber ignoriere WindowsApps
-    try {
-        $pythonPath = (Get-Command python -ErrorAction Stop).Source
-        if (-not $pythonPath.Contains("WindowsApps")) {
-            return $pythonPath
-        }
-    }
-    catch {
-        return $null
-    }
-    
     return $null
 }
 
@@ -35,7 +22,6 @@ function Install-PythonWithWinget {
     # Installiert Python 3.11 mit winget
     Write-Host "Installiere Python mit winget..." -ForegroundColor Cyan
     
-    # Führe winget install aus
     $process = Start-Process -FilePath "winget" -ArgumentList @(
         "install",
         "--id=Python.Python.3.11",
@@ -49,7 +35,7 @@ function Install-PythonWithWinget {
         throw "Python-Installation fehlgeschlagen mit Exit-Code $($process.ExitCode)"
     }
     
-    # Aktualisiere den PATH
+    # PATH aktualisieren
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + 
                 [System.Environment]::GetEnvironmentVariable("Path", "User")
     
@@ -62,15 +48,20 @@ function Write-Step {
     Write-Host $message -ForegroundColor Cyan
 }
 
-# Admin-Check
+# Admin-Check mit korrigiertem Neustart
 $adminCheck = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
 if (-NOT $adminCheck.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "`n⚠️ ADMIN-REICHTE ERFORDERLICH" -ForegroundColor Red
     Write-Host "Das Skript wird sich neu starten..." -ForegroundColor Yellow
     
     $scriptUrl = "https://raw.githubusercontent.com/stoorax/jewtube/main/jewtube_installer"
-    $command = "Start-Process powershell -Verb RunAs -ArgumentList '-NoExit -Command \"irm $scriptUrl | iex\"'"
-    Invoke-Expression $command
+    $command = "iex `"irm '$scriptUrl'`""
+    
+    Start-Process powershell -Verb RunAs -ArgumentList @(
+        "-NoExit",
+        "-Command",
+        $command
+    )
     exit
 }
 
@@ -99,32 +90,26 @@ try {
     $pythonExe = Get-RealPython
     
     if (-not $pythonExe) {
-        Write-Host "Keine echte Python-Installation gefunden" -ForegroundColor Yellow
+        Write-Host "Python nicht gefunden, installiere..." -ForegroundColor Yellow
         $pythonExe = Install-PythonWithWinget
         
         if (-not $pythonExe) {
-            throw "Python wurde installiert, aber nicht gefunden"
+            throw "Python wurde installiert, aber Pfad nicht gefunden"
         }
-        
         Write-Host "✅ Python installiert: $pythonExe" -ForegroundColor Green
     }
     else {
-        # Prüfe ob es eine echte Installation ist
-        $pythonVersion = & `"$pythonExe`" --version 2>&1
         Write-Host "Python gefunden: $pythonExe" -ForegroundColor Green
-        Write-Host "Version: $pythonVersion" -ForegroundColor Green
+        Write-Host "Version: $(& `"$pythonExe`" --version 2>&1)" -ForegroundColor Green
         
-        # Warnung wenn es der Store-Alias ist
+        # Warnung wenn es ein Store-Alias ist
         if ($pythonExe -like "*WindowsApps*") {
-            Write-Host "⚠️ WARNUNG: Store-Alias erkannt! Er wird nicht funktionieren." -ForegroundColor Red
-            Write-Host "Lösche Store-Alias und installiere Python neu..." -ForegroundColor Yellow
-            
-            # Lösche den Store-Alias
+            Write-Host "WARNUNG: Store-Alias erkannt! Lösche und installiere neu..." -ForegroundColor Red
+            # Lösche Store-Alias
             $aliasPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\python.exe"
             if (Test-Path $aliasPath) {
                 Remove-Item -Path $aliasPath -Force -ErrorAction SilentlyContinue
             }
-            
             $pythonExe = Install-PythonWithWinget
         }
     }
@@ -154,7 +139,6 @@ try {
     
     Write-Host "`nVerfügbare Kommandos:" -ForegroundColor Cyan
     Write-Host "• & `"$pythonExe`" -m yt_dlp [URL]" -ForegroundColor White
-    Write-Host "• & `"$pythonExe`" -m ytmusicapi" -ForegroundColor White
 }
 catch {
     Write-Host "`n❌❌❌ FEHLER: $_" -ForegroundColor Red
